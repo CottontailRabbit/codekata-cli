@@ -7,7 +7,7 @@ LINES_KO = {
     "start": [
         "자, {boss} 등장! 오늘의 손가락 컨디션 확인 들어갑니다!",
         "경기 시작합니다! 상대는 {boss}! 키보드 예열 완료!",
-        "{boss}가 코드베이스를 점령했습니다! 막아야 합니다!",
+        "{boss}{ga} 코드베이스를 점령했습니다! 막아야 합니다!",
         "관중석 술렁입니다! {boss} 대 도전자, 지금 시작!",
     ],
     "next_boss": [
@@ -45,7 +45,7 @@ LINES_KO = {
     "miss": [
         "아아~ 빗나갑니다!",
         "막혔어요! 다시 노려봐야 합니다!",
-        "헛스윙! {boss}가 비웃습니다!",
+        "헛스윙! {boss}{ga} 비웃습니다!",
         "아쉽다! 각도가 살짝 틀어졌어요!",
     ],
     "combo_break": [
@@ -68,7 +68,7 @@ LINES_KO = {
     "flawless": ["FLAWLESS! 노데미지 클리어! 오늘 이분 손 보험 들어야 합니다!"],
     "game_over": ["쓰러집니다… GAME OVER. 하지만 내일의 손가락은 더 강해집니다!",
                   "여기까지! 하트 소진! 리매치를 기다리겠습니다!"],
-    "escape": ["{boss}가 도망칩니다! 아깝다, 다음엔 반드시!", "타임업! {boss} 간신히 살아남습니다!"],
+    "escape": ["{boss}{ga} 도망칩니다! 아깝다, 다음엔 반드시!", "타임업! {boss} 간신히 살아남습니다!"],
     "streak": ["{n}타 연속 무오타! 손끝에서 레이저가!", "{n}타 스트릭! 이 리듬 끊지 마세요!",
                "{n}타 노미스! 기계식 키보드가 노래합니다!"],
     "streak_break": ["오타! {n}타 스트릭 종료!", "아! 손가락이 꼬였어요! {n}타에서 끊깁니다!"],
@@ -164,6 +164,14 @@ LINES_EN = {
 _last = {}
 
 
+def josa_ga(word):
+    """받침이 있으면 '이', 없으면 '가'."""
+    ch = word.strip()[-1:] if word else ""
+    if "가" <= ch <= "힣":
+        return "이" if (ord(ch) - 0xAC00) % 28 else "가"
+    return "가"
+
+
 def say(event, **kw):
     lines = LINES_EN if i18n.UI == "en" else LINES_KO
     pool = lines.get(event) or [""]
@@ -171,6 +179,7 @@ def say(event, **kw):
     line = random.choice(choices)
     _last[event] = line
     kw.setdefault("dmg", "")
+    kw.setdefault("ga", josa_ga(kw.get("boss", "")))
     try:
         return line.format(**kw)
     except (KeyError, IndexError):
