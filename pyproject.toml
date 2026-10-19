@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codekata"
+version = "0.2.0"
+description = "A terminal coding kata that hits back — ChatGPT (Codex CLI) problems, executed judging, debugger killcam, online ranking"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+keywords = ["kata", "coding-practice", "terminal", "game", "typing"]
+classifiers = [
+    "Environment :: Console :: Curses",
+    "Programming Language :: Python :: 3",
+    "Topic :: Education",
+    "Topic :: Games/Entertainment",
+]
+
+[project.scripts]
+codekata = "codekata.cli:main"
+
+[tool.setuptools]
+packages = ["codekata"]
