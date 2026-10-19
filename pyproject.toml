@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "codekata"
 version = "0.2.0"
-description = "A terminal coding kata that hits back — ChatGPT (Codex CLI) problems, executed judging, debugger killcam, online ranking"
+description = "A terminal coding kata that hits back — ChatGPT (Codex CLI) problems, executed judging, debugger killcam, online ranking, Robot SW engineer practical exam track"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []
@@ -22,3 +22,6 @@ codekata = "codekata.cli:main"
 
 [tool.setuptools]
 packages = ["codekata"]
+
+[tool.setuptools.package-data]
+codekata = ["tasks/*.py", "tasks/*.cpp"]

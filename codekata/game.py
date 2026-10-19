@@ -1,13 +1,15 @@
 """게임 엔진: 보스전 · 콤보 · 하트 · 스테이지(타자 러시 / 카타 / 퀴즈) · 결과 화면."""
 import random
 import re
+import subprocess
 import threading
 import time
 import uuid
 from collections import deque
 from datetime import date, datetime
+from pathlib import Path
 
-from . import VERSION, bank, caster, fx, judge, tracer
+from . import VERSION, bank, caster, exam, fx, judge, tracer
 from .i18n import pick, tr
 from .log import LOG
 from .store import RANKED_STAGES
@@ -17,9 +19,15 @@ BOSSES = [(("NullPointer 드래곤", "NullPointer Dragon"), fx.RED), (("Segfault
           (("레이스컨디션 쌍둥이", "Race-Condition Twins"), fx.CYAN), (("메모리릭 슬라임", "Memory-Leak Slime"), fx.LIME),
           (("Heisenbug 유령", "Heisenbug Ghost"), fx.PINK), (("의존성 지옥견", "Dependency Hellhound"), 202),
           (("Merge Conflict 키메라", "Merge-Conflict Chimera"), 99)]
-MODES = {"mix": ("믹스", "Mix"), "rush": ("타자 러시", "Type Rush"), "kata": ("카타", "Kata"), "quiz": ("퀴즈", "Quiz")}
+EXAM_BOSSES = [(("특이점 골렘", "Singularity Golem"), fx.RED), (("짐벌락 드래곤", "Gimbal-Lock Dragon"), fx.ORANGE),
+               (("오버슈트 히드라", "Overshoot Hydra"), fx.PURPLE), (("atan 사분면 유령", "atan Quadrant Ghost"), fx.PINK),
+               (("int 나눗셈 고블린", "Int-Division Goblin"), fx.GOLD), (("CP949 인코딩 슬라임", "CP949 Encoding Slime"), fx.LIME),
+               (("적분 와인드업 키메라", "Integral-Windup Chimera"), fx.CYAN), (("-0.000 망령", "The -0.000 Wraith"), 202)]
+MODES = {"mix": ("믹스", "Mix"), "rush": ("타자 러시", "Type Rush"), "kata": ("카타", "Kata"), "quiz": ("퀴즈", "Quiz"),
+         "exam": ("실기 랭크전", "Exam ranked"), "exam-quiz": ("실기 퀴즈", "Exam quiz"),
+         "exam-kata": ("실기 카타", "Exam kata"), "exam-task": ("실기 작업형", "Exam task")}
 KIND_ICON = {"rush": (("⌨ 타자 러시", "⌨ TYPE RUSH"), fx.CYAN), "kata": (("✎ 카타", "✎ KATA"), fx.LIME),
-             "quiz": (("? 퀴즈", "? QUIZ"), fx.PINK)}
+             "quiz": (("? 퀴즈", "? QUIZ"), fx.PINK), "task": (("⚙ 실전 작업형", "⚙ EXAM TASK"), fx.ORANGE)}
 
 
 def mode_label(mode):
@@ -97,7 +105,11 @@ class Game:
                  debug=False, player="player"):
         self.cfg, self.src, self.provider, self.snd, self.keys = cfg, source, provider, sound, keys
         self.mode, self.langs, self.stages, self.debug, self.player = mode, list(langs), stages, debug, player
-        self.ranked = stages == RANKED_STAGES
+        self.track = "exam" if mode.startswith("exam") else "code"
+        if self.track == "exam":
+            self.ranked = mode == "exam" and stages == exam.EXAM_STAGES
+        else:
+            self.ranked = stages == RANKED_STAGES
         self.sid = uuid.uuid4().hex[:8]
         self.score = self.combo = self.max_combo = 0
         self.hearts = 3
@@ -121,7 +133,8 @@ class Game:
         return 1 + 0.25 * min(self.combo, 12)
 
     def new_boss(self):
-        choices = [(pick(name), color) for name, color in BOSSES if pick(name) != self.boss]
+        pool = EXAM_BOSSES if self.track == "exam" else BOSSES
+        choices = [(pick(name), color) for name, color in pool if pick(name) != self.boss]
         self.boss, self.boss_color = random.choice(choices)
         self.boss_max = int(self.stages * 470 * (1 + 0.6 * self.kos))
         self.boss_hp = self.disp_hp = self.boss_max
@@ -136,7 +149,8 @@ class Game:
         left = (fx.c(" CODEKATA ", fx.BLACK, bold=True, bg=fx.GOLD) + " " +
                 fx.c(bank.LANG_LABEL.get(lang, lang), bank.LANG_COLOR.get(lang, fx.WHITE), bold=True) +
                 fx.c(f"  STAGE {self.stage}/{self.stages}", fx.WHITE, bold=True) +
-                (fx.c("  RANKED", fx.RED, bold=True) if self.ranked else fx.c(tr("  연습", "  PRACTICE"), fx.DIM)))
+                (fx.c("  RANKED", fx.RED, bold=True) if self.ranked else fx.c(tr("  연습", "  PRACTICE"), fx.DIM)) +
+                (fx.c(tr("  로봇SW개발기사 실기", "  Robot SW exam"), fx.ORANGE, bold=True) if self.track == "exam" else ""))
         hearts = " ".join(fx.c("♥", fx.RED, bold=True) if i < self.hearts else fx.c("♡", fx.DARK) for i in range(3))
         right = hearts + "   " + fx.c("SCORE ", fx.DIM) + fx.c(fx.fmt(self.score), fx.GOLD, bold=True)
         l1 = fx.pad(left, w - fx.width(right)) + right
@@ -458,6 +472,8 @@ class Game:
     # ─── 스테이지: 카타 ──────────────────────────────────
 
     def stage_kata(self, p):
+        if p.get("cpp_exec") and p.get("_expected") is None:      # 모범답안 컴파일을 미리 (제출 대기 단축)
+            threading.Thread(target=judge.warm_cpp, args=(p,), daemon=True).start()
         buf, cur = "", 0
         attempts, hint = 0, False
         fb = []
@@ -666,6 +682,159 @@ class Game:
         self.after(p)
         return {"ok": ok, "secs": sec}
 
+    # ─── 스테이지: 실기 작업형 ────────────────────────────
+
+    def edit(self, path):
+        cmd = exam.editor_cmd(path)
+        if not cmd:
+            return False
+        fx.leave()
+        self.keys.__exit__(None, None, None)
+        try:
+            subprocess.call(cmd)
+        except OSError:
+            cmd = None
+        finally:
+            self.keys.__enter__()
+            fx.enter()
+        LOG.ev("task_edit", editor=cmd[0] if cmd else None)
+        return cmd is not None
+
+    def stage_task(self, p):
+        ws, src = exam.workspace(self.sid, p, scaffold=self.cfg.get("exam_scaffold", True))
+        p["_ws"] = str(ws)
+        t0 = time.monotonic()
+        runs = fails = 0
+        best, hint, last = 0.0, False, None
+        cols, _ = fx.size()
+        w = max(40, min(cols - 8, 96))
+        lang_ext = "C++ (g++ -std=gnu++17)" if p["lang"] == "cpp" else "Python 3"
+
+        def result_lines():
+            if last is None:
+                return [fx.c(tr("아직 실행 전 — e로 작성하고 r로 채점하세요.", "Not run yet — write with e, grade with r."), fx.DIM)]
+            if not last["ok"]:
+                head = {"compile": tr("✖ 컴파일 에러", "✖ COMPILE ERROR"), "run": tr("✖ 실행 실패", "✖ RUNTIME ERROR")}
+                return [fx.c(head.get(last["stage"], "✖"), fx.RED, bold=True)] + \
+                       [fx.c("  " + x[:w], fx.RED) for x in last["msg"].splitlines()[:4]]
+            ratio, rows = last["ratio"], last["rows"]
+            n_ok = sum(1 for r in rows if r[1] == "ok")
+            out = [fx.c(tr(f"채점 ▸ {n_ok}/{len(rows)}줄 일치 ({ratio * 100:.0f}%)", f"Graded ▸ {n_ok}/{len(rows)} lines match ({ratio * 100:.0f}%)"),
+                        fx.LIME if ratio == 1 else fx.YELLOW if ratio >= 0.5 else fx.RED, bold=True)]
+            shown = 0
+            for ln, st, e, g in rows:
+                if st == "ok" or shown >= 4:
+                    continue
+                shown += 1
+                tag = {"near": tr("≈ 형식", "≈ format"), "bad": tr("✖ 값  ", "✖ value"), "extra": tr("+ 초과", "+ extra")}[st]
+                out.append(fx.c(f"  L{ln:<3}{tag} ", fx.YELLOW if st == "near" else fx.RED, bold=True) +
+                           fx.c(tr("기대 ", "want ") + (e if e is not None else "∅"), fx.LIME) + fx.c("  │  ", fx.DARK) +
+                           fx.c(tr("출력 ", "got  ") + (g if g is not None else tr("(없음)", "(missing)")), fx.ORANGE))
+            return out
+
+        def body(reveal=None):
+            icon, col = kind_icon("task")
+            out = [fx.c(icon, col, bold=True) + "  " + fx.c(p["title"], fx.WHITE, bold=True) +
+                   fx.c(f"   [{p['topic']} · {lang_ext}]", fx.DARK), ""]
+            out += [fx.c(x, 253) for x in wrap(p["desc"], w)]
+            inp = p["input"].rstrip("\n").split("\n")
+            out += ["", fx.c(tr(f"input.txt ({len(inp)}줄)", f"input.txt ({len(inp)} lines)"), fx.DIM)]
+            out += [fx.c(f"{i:>2} │ ", fx.DARK) + fx.c(x, 250) for i, x in enumerate(inp[:6], 1)]
+            if len(inp) > 6:
+                out.append(fx.c("   ⋮", fx.DARK))
+            out += [fx.c(tr("출력 형식 ▸ ", "Output ▸ "), fx.SKY, bold=True) + fx.c(p["fmt"], fx.SKY),
+                    fx.c(tr("첫 줄 예시 ▸ ", "Line 1 example ▸ "), fx.DIM) + fx.c(p["expected"].split("\n")[0], fx.WHITE)]
+            if hint:
+                out.append(fx.c(tr("힌트 ▸ ", "Hint ▸ "), fx.GOLD, bold=True) + fx.c(p["hint"], fx.GOLD))
+            out += [fx.c(tr("작업 파일 ▸ ", "Your file ▸ "), fx.DIM) + fx.c(str(src), fx.CYAN)]
+            if reveal:
+                out += ["", fx.c(tr("모범답안 ▸ ", "Model answer ▸ "), fx.GOLD, bold=True) + fx.c(str(reveal), fx.CYAN)]
+                out += code_block("\n".join(exam.model_answer(p["tid"], p["lang"]).splitlines()[:14]), p["lang"])
+            else:
+                out += [""] + result_lines()
+            el = int(time.monotonic() - t0)
+            left = max(0, exam.TASK_LIMIT - el)
+            out += ["", fx.c(f"⏱ {el // 60:02d}:{el % 60:02d}", fx.WHITE, bold=True) +
+                    fx.c(tr(f" / 제한 {exam.TASK_LIMIT // 60}분 (남은 {left // 60}분)", f" / limit {exam.TASK_LIMIT // 60} min ({left // 60} min left)"), fx.DIM) +
+                    fx.c(tr(f"   실행 {runs}회", f"   runs {runs}"), fx.DIM) +
+                    (fx.c(tr(f"   최고 {best * 100:.0f}%", f"   best {best * 100:.0f}%"), fx.YELLOW) if runs else "")]
+            return out
+
+        keys_help = tr("e 에디터 · r 실행/채점 · h 힌트(-30%) · f 부분점수 제출 · ESC 포기(모범답안)",
+                       "e editor · r run & grade · h hint (-30%) · f submit partial · ESC give up (model answer)")
+        self.prompt = fx.c(keys_help, fx.DIM)
+        LOG.ev("task_open", tid=p["tid"], lang=p["lang"], ws=str(ws))
+
+        def give_up(why):
+            model = ws / ("model_solution.cpp" if p["lang"] == "cpp" else "model_solution.py")
+            model.write_text(exam.model_answer(p["tid"], p["lang"]), encoding="utf-8")
+            self.body = body(reveal=model)
+            self.render()
+            if best >= 0.5:
+                self.deal(1500 * best * 0.6, label="PARTIAL", event="hit")
+                return {"ok": True, "partial": best, "runs": runs}
+            self.miss(lose_heart=why != "skip", reason=f"task_{why}")
+            self.after(p)
+            return {"ok": False, "best": best, "runs": runs}
+
+        while True:
+            self.body = body()
+            self.render()
+            if time.monotonic() - t0 >= exam.TASK_LIMIT:
+                self.say("c", caster.say("timeout"))
+                return give_up("timeout")
+            k = self.keys.get(0.5)
+            if k is None:
+                continue
+            if k == "ESC":
+                self.say("c", caster.say("skip"))
+                return give_up("skip")
+            if k in ("e", "E"):
+                if not self.edit(src):
+                    self.say("c", tr("에디터를 찾지 못했습니다. $EDITOR를 설정하거나 다른 창에서 파일을 편집하고 r을 누르세요.",
+                                     "No editor found. Set $EDITOR, or edit the file in another window and press r."), tw=False)
+                continue
+            if k in ("h", "H") and not hint:
+                hint = True
+                self.slips += 1
+                self.snd.play("select")
+                self.say("c", caster.say("hint", cost="30%"), tw=False)
+                continue
+            if k in ("f", "F"):
+                if not runs:
+                    continue
+                return give_up("partial")
+            if k not in ("r", "R"):
+                continue
+            self.prompt = fx.c(tr("⚙ 컴파일/실행 중...", "⚙ compiling / running..."), fx.YELLOW, bold=True)
+            self.render()
+            last = exam.run_solution(ws, p["lang"])
+            runs += 1
+            self.prompt = fx.c(keys_help, fx.DIM)
+            if last["ok"]:
+                last["ratio"], last["rows"] = exam.grade(p["expected"], last["out"])
+                best = max(best, last["ratio"])
+            LOG.ev("task_run", tid=p["tid"], lang=p["lang"], run=runs, stage=last["stage"], ok=last["ok"],
+                   ratio=round(last.get("ratio", 0), 3), msg=last["msg"][:200], secs=round(last["secs"], 2))
+            self.body = body()
+            if last["ok"] and last["ratio"] == 1.0:
+                sec = time.monotonic() - t0
+                speed = 1.3 if sec < 300 else 1.15 if sec < 600 else 1.0
+                crit = fails == 0 and not hint
+                base = 1500 * speed * (0.7 if hint else 1.0) * max(0.5, 1 - 0.15 * fails)
+                self.deal(base, crit=crit, label="ACCEPTED", event="speed" if crit and sec < 300 else None,
+                          sec=f"{sec:.0f}")
+                self.after(p)
+                return {"ok": True, "runs": runs, "secs": sec}
+            fails += 1
+            self.slips += 1
+            self.snd.play("typo" if last["ok"] else "miss")
+            fx.flash(fx.RED, 40)
+            label = {"compile": "COMPILE ERROR", "run": "RUNTIME ERROR"}.get(last["stage"], "WRONG ANSWER")
+            fx.slam(label, [fx.RED], hold=0.25, shake_power=2)
+            self.render()
+            self.say("c", caster.say("miss", boss=self.boss), tw=False)
+
     # ─── 해설 + 디버거 ────────────────────────────────────
 
     def after(self, p, extra=()):
@@ -678,6 +847,9 @@ class Game:
     def replay_code(self, p):
         if p["lang"] != "python":
             return None
+        if p["kind"] == "task":
+            path = Path(p["_ws"]) / "solution.py" if p.get("_ws") else None
+            return path.read_text(encoding="utf-8") if path and path.exists() else None
         if p["kind"] == "quiz":
             return p["code"]
         if p["kind"] == "kata" and p.get("answer"):
@@ -701,12 +873,16 @@ class Game:
                 raise Quit()
             if k == "d" and code:
                 LOG.ev("killcam", title=p["title"])
-                tracer.replay(code, self.keys, title=p["title"], sound=self.snd)
+                tracer.replay(code, self.keys, title=p["title"], sound=self.snd, cwd=p.get("_ws"))
                 self.render()
 
     # ─── 메인 루프 ───────────────────────────────────────
 
     def pick_kind(self):
+        if self.mode == "exam":
+            return exam.EXAM_ORDER[(self.stage - 1) % len(exam.EXAM_ORDER)]
+        if self.mode.startswith("exam-"):
+            return self.mode[5:]
         if self.mode != "mix":
             return self.mode
         return random.choice(["rush", "kata", "quiz", "quiz", "kata"])
@@ -723,7 +899,7 @@ class Game:
                 self.stage += 1
                 self.cur_lang = random.choice(self.langs)
                 kind = self.pick_kind()
-                p = self.src.next(kind, self.cur_lang)
+                p = self.src.next(kind, self.cur_lang, self.track)
                 self.feed.clear()
                 self.body = []
                 LOG.ev("problem", stage=self.stage, kind=kind, lang=self.cur_lang, title=p["title"],
@@ -768,7 +944,7 @@ class Game:
             "score": self.score, "grade": grade, "max_combo": self.max_combo, "acc": round(acc, 3),
             "wpm": round(wpm, 1), "kos": self.kos, "hearts": self.hearts, "hits": self.hits,
             "misses": self.misses, "crits": self.crits, "secs": int(time.monotonic() - self.t0), "reason": reason,
-            "flawless": flawless, "ver": VERSION,
+            "flawless": flawless, "ver": VERSION, "track": self.track,
             "results": [{"kind": r["kind"], "lang": r["lang"], "ok": r["ok"]} for r in self.results],
         }
         LOG.ev("session_end", **{k: v for k, v in rec.items() if k not in ("id", "ts", "results")})

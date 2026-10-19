@@ -19,7 +19,7 @@ debugger "killcam" replays your code line by line.
 
 | | |
 |---|---|
-| **Modes** | Ranked (8-stage mix) · Type Rush (type code, WPM) · Kata (write 1–2 lines) · Quiz (read code, 4 choices) |
+| **Modes** | Ranked (8-stage mix) · Type Rush (type code, WPM) · Kata (write 1–2 lines) · Quiz (read code, 4 choices) · **Robot SW exam track** (Python/C++) |
 | **Languages** | Python, JavaScript, Rust, C++, Go |
 | **Hit feel** | screen shake · flash · big-text slams · HP drain · combo tiers (3/5/7/10/15) · synthesized SFX · caster + analyst commentary |
 | **AI problems** | ChatGPT via `codex exec` with a JSON schema, prefetched in the background (a batch takes ~30 s); the built-in bank serves instantly meanwhile |
@@ -98,6 +98,38 @@ Global flags (anywhere): `--en` `--ko` `--debug` (HUD + `~/.codekata/debug.log`)
 
 Combo multiplier `1 + 0.25 × combo` (max ×4) · crits for first-try / typo-free · speed bonuses · K.O. bonus per
 boss · FLAWLESS (+3,000) for a no-miss, no-hint clear with all hearts. Grades SS / S / A / B / C / D.
+
+## 🤖 Robot Software Engineer practical exam track (`exam` branch)
+
+Practice the core pattern of the Korean *Robot Software Development Engineer* (로봇소프트웨어개발기사) practical
+exam — **read a TXT input file, compute robot formulas, write the result file in exactly the required format** — in
+Python or C++. Install this branch with `pipx install "git+https://github.com/<OWNER>/<REPO>.git@exam"`.
+
+```bash
+codekata exam                      # ranked, 5 stages: quiz → kata → quiz → kata → real task (boss)
+codekata exam -l cpp
+codekata exam task                 # real tasks only (2 by default)
+codekata exam task -t ik2 -l cpp   # pin one task
+codekata exam quiz | kata
+codekata exam list
+```
+
+| stage | what | judging |
+|---|---|---|
+| **quiz** | degrees vs radians, `atan2` argument order, `arange` end point, integer division, rounding rules, `-0.000`, signed bytes, heap direction, `grid[row][col]`, encodings, C++ `fixed`/`setprecision` … | every answer verified by running the code |
+| **kata** | one-line formulas: FK/IK, cubic/LSPB/BBPB, PID, octile heuristic … | Python executed; **C++ compiled with g++ and run** against hidden tests |
+| **real task** | `input.txt` is created in a work folder → `e` opens your editor (`$CODEKATA_EDITOR`/`$VISUAL`/`$EDITOR`/nano/vim) on `solution.py`/`.cpp` → `r` runs and grades | line-by-line diff against the reference output; value errors and format errors (decimals, separators) reported separately; ±1 in the last digit accepted |
+
+Task keys: `e` editor · `r` run & grade · `h` hint (−30%) · `f` submit partial (≥ 50%) · `ESC` give up (shows the
+model answer) · 25 minutes per task. Editing in another window (e.g. VS Code) and pressing `r` works too.
+
+12 tasks with fresh random input every time: `fk2`, `ik2`, `mk2` (Jacobian velocity), `cubic`, `lspb`, `bbpb`,
+`dijkstra`, `grid` (8-connected A*), `floyd`, `pid`, `can` (CAN frame parsing), `fan` (temperature hysteresis).
+The Python and C++ model answers of every task produce identical output on 40 random inputs.
+
+> Sources (researched 2026-10): Q-net notice "2026 Robot SW Development Engineer practical exam" (applies from the 3rd
+> engineer session of 2026; personal PCs not allowed) and candidates' study notes (task-type, ~4–5 h, exam-room PC with
+> Visual Studio · PyCharm · Excel, C · C++ · Python). Check the official PDF for the exact environment.
 
 ## Online ranking
 

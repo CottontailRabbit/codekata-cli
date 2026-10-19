@@ -12,7 +12,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from . import bank, i18n, judge
+from . import bank, exam, i18n, judge
 from .log import LOG
 
 PROBLEM_SCHEMA = {
@@ -85,6 +85,37 @@ KIND_SPEC = {
 }
 
 
+EXAM_TOPICS = ("로봇소프트웨어개발기사 실기(작업형, 언어 Python/C/C++)는 'TXT 입력 파일을 읽어 로봇 공식으로 계산하고 "
+               "요구한 형식 그대로 결과 파일에 쓰기'가 기본 틀이다. 출제 범위: 2링크 FK/IK/자코비안(MK), DH 파라미터, "
+               "3차 다항식·LSPB·BBPB 궤적, Dijkstra/A*/Floyd 경로 탐색, PID 제어, CAN 프레임 파싱(리틀엔디언, 부호), "
+               "TCP 모니터링, 파티클 필터, 점유 격자 지도, 파일 입출력과 인코딩(utf-8/cp949/utf-8-sig), 출력 형식 지정. "
+               "자주 틀리는 함정: 도/라디안, atan2 인자 순서, arange 끝점, int 나눗셈, round 규칙, -0.000, signed 바이트, "
+               "최소/최대 힙 방향, 격자 [행][열].")
+
+EXAM_SPEC = {
+    "quiz": """위 실기 범위의 공식·함수·형식 함정을 묻는 4지선다 퀴즈.
+- code: 그대로 실행 가능한 완전한 프로그램 5~15줄 (Python은 math/numpy만, C++은 표준 라이브러리만, 파일 입출력 없이)
+- question: 대부분 출력 예측("출력은?"), 가끔 공식/개념 선택
+- options: 서로 다른 보기 4개, 출력 예측이면 실제 출력 그대로(줄바꿈은 공백으로)
+- correct: 정답 인덱스 0~3, 문제마다 위치를 섞을 것
+- desc/setup/hint/answer: 빈 문자열, tests/accept: 빈 배열""",
+    "kata": """위 실기 범위의 공식 한 줄을 쓰는 카타.
+- desc: 무엇을 계산할지 (변수명·단위 명시). 정답을 그대로 쓰지 말 것
+- setup: {setup_rule}
+- tests: setup과 같은 변수를 다른 값으로 정의한 숨은 테스트 setup 2개
+- answer: {expr_rule}
+- hint: 핵심 공식/함수만, accept: 빈 배열, code/question: 빈 문자열, options: 빈 배열, correct: 0""",
+}
+
+
+def _exam_rules(lang):
+    if lang == "cpp":
+        return ("main() 안에 들어갈 C++ 선언문들 (예: double L1 = 1.0, t1 = 30 * M_PI / 180;). #include 금지 — "
+                "<bits/stdc++.h>와 using namespace std;가 이미 있음",
+                "반드시 값을 내는 단일 C++ 표현식 (세미콜론·대입·cout 금지). 결과는 숫자 하나")
+    return ("변수 정의 Python 코드, 필요한 import(math 등) 포함", "반드시 값을 돌려주는 단일 Python 표현식 (print·대입 금지)")
+
+
 def _expr_rule(lang):
     if lang == "python":
         return "반드시 값을 돌려주는 단일 Python 표현식 (print 금지, 대입문 금지)"
@@ -140,12 +171,18 @@ class CodexProvider:
             LOG.dbg.debug("codex raw (%dms): %s", ms, text[:4000])
             return json.loads(text), ms
 
-    def generate(self, kind, lang, n, avoid):
+    def generate(self, kind, lang, n, avoid, track="code"):
         label = bank.LANG_LABEL.get(lang, lang)
-        spec = KIND_SPEC[kind].replace("{expr_rule}", _expr_rule(lang))
+        if track == "exam":
+            setup_rule, expr_rule = _exam_rules(lang)
+            spec = EXAM_SPEC[kind].replace("{setup_rule}", setup_rule).replace("{expr_rule}", expr_rule)
+            spec = f"{EXAM_TOPICS}\n{spec}"
+        else:
+            spec = KIND_SPEC[kind].replace("{expr_rule}", _expr_rule(lang))
         avoid_s = ", ".join(avoid[-40:]) or "(없음)"
         ui = i18n.UI
-        prompt = (f"너는 {label} 코딩 카타 출제자다. 초급~중급 난이도로 서로 다른 주제의 문제 {n}개를 만들어라.\n"
+        who = f"로봇소프트웨어개발기사 실기 대비 {label}" if track == "exam" else f"{label} 코딩 카타"
+        prompt = (f"너는 {who} 출제자다. 초급~중급 난이도로 서로 다른 주제의 문제 {n}개를 만들어라.\n"
                   f"[문제 형식]\n{spec}\n[해설 스타일]\n{STYLE[ui]}\n[언어]\n{TEXT_LANG[ui]}\n"
                   f"[중복 금지 제목]\n{avoid_s}\n"
                   "파일을 읽거나 명령을 실행하지 말고, 스키마에 맞는 JSON만 출력하라.")
@@ -163,8 +200,10 @@ class CodexProvider:
         return bool(data.get("correct")), data.get("reason", ""), ms
 
 
-def normalize(raw, kind, lang):
-    p = {"kind": kind, "lang": lang, "source": "ai"}
+def normalize(raw, kind, lang, track="code"):
+    p = {"kind": kind, "lang": lang, "source": "ai", "track": track}
+    if track == "exam" and kind == "kata" and lang == "cpp":
+        p["cpp_exec"] = True
     for k in ("title", "desc", "setup", "code", "question", "hint", "answer", "explain"):
         p[k] = str(raw.get(k, "") or "")
     for k in ("tests", "accept", "options"):
@@ -194,7 +233,8 @@ def validate(p):
         opts = p["options"]
         if len(opts) != 4 or len(set(opts)) != 4 or not (0 <= p["correct"] < 4) or not p["code"]:
             return False, "quiz shape"
-        if p["lang"] in ("python", "js") and ("출력" in p["question"] or "output" in p["question"].lower()):
+        if p["lang"] in ("python", "js", "cpp") and ("출력" in p["question"] or "output" in p["question"].lower()
+                                                      or "print" in p["question"].lower()):
             r = judge.program_output(p["lang"], p["code"])
             if r and r["ok"]:
                 out = " ".join(r["out"].split())
@@ -224,15 +264,18 @@ class ProblemSource:
         self.last_error = ""
         self.alive = provider is not None
         self._bank_used = set()
+        self.task_pick = None             # codekata exam -t <id> 로 실전 문제 고정
         if self.alive:
             for i in range(2):
                 threading.Thread(target=self._worker, name=f"prefetch-{i}", daemon=True).start()
 
-    def warm(self, kinds, langs):
+    def warm(self, kinds, langs, track="code"):
         with self.cv:
             for k in kinds:
+                if k == "task":                     # 실전 작업형은 문제은행 + 레퍼런스 풀이로만 출제
+                    continue
                 for lang in langs:
-                    self.wanted.add((k, lang))
+                    self.wanted.add((k, lang, track))
             self.cv.notify_all()
 
     def clear(self):
@@ -247,8 +290,12 @@ class ProblemSource:
     def _seen(self, lang):
         return self.history["seen"].setdefault(lang, [])
 
-    def next(self, kind, lang):
-        key = (kind, lang)
+    def next(self, kind, lang, track="code"):
+        if kind == "task":
+            p = self._exam_task(lang)
+            self.stats["served_bank"] += 1
+            return p
+        key = (kind, lang, track)
         with self.cv:
             self.wanted.add(key)
             q = self.queues.get(key)
@@ -262,17 +309,30 @@ class ProblemSource:
         if p:
             self.stats["served_ai"] += 1
         else:
-            p = bank.localize(self._from_bank(kind, lang))
+            p = bank.localize(self._from_bank(kind, lang, track))
             self.stats["served_bank"] += 1
         self._seen(lang).append(p.get("title_ko") or p["title"])
         return p
 
-    def _from_bank(self, kind, lang):
+    def _exam_task(self, lang):
+        tid = self.task_pick
+        if not tid:
+            seen = self.history["seen"].setdefault("exam-task", [])
+            ids = [t["tid"] for t in exam.TASKS]
+            fresh = [t for t in ids if t not in self._bank_used and t not in seen[-6:]] or \
+                    [t for t in ids if t not in self._bank_used] or ids
+            tid = random.choice(fresh)
+            seen.append(tid)
+        self._bank_used.add(tid)
+        return exam.make_task(tid, lang, seed=random.randrange(1 << 30))
+
+    def _from_bank(self, kind, lang, track="code"):
         import copy
-        pool = [p for p in bank.ALL if p["kind"] == kind and p["lang"] == lang] or \
-               [p for p in bank.ALL if p["kind"] == kind]
+        src = exam.QUIZ + exam.KATA if track == "exam" else bank.ALL
+        pool = [p for p in src if p["kind"] == kind and p["lang"] == lang] or \
+               [p for p in src if p["kind"] == kind]
         seen = set(self._seen(lang)[-25:])
-        fresh = [p for p in pool if p["id"] not in self._bank_used and p["title"] not in seen] or \
+        fresh = [p for p in pool if p["id"] not in self._bank_used and p.get("title_ko", p["title"]) not in seen] or \
                 [p for p in pool if p["id"] not in self._bank_used] or pool
         p = copy.deepcopy(random.choice(fresh))
         self._bank_used.add(p["id"])
@@ -293,15 +353,15 @@ class ProblemSource:
                     self.cv.wait(5)
                     key = self._pick_need()
                 self.inflight.add(key)
-            kind, lang = key
+            kind, lang, track = key
             try:
                 avoid = list(self._seen(lang)) + [p["title"] for p in self.queues.get(key, ())]
-                raws, ms = self.provider.generate(kind, lang, self.batch, avoid)
+                raws, ms = self.provider.generate(kind, lang, self.batch, avoid, track)
                 self.stats["ai_calls"] += 1
                 self.stats["ai_ms"] += ms
                 good = []
                 for raw in raws:
-                    p = normalize(raw, kind, lang)
+                    p = normalize(raw, kind, lang, track)
                     ok, why = validate(p)
                     if ok:
                         good.append(p)

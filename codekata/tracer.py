@@ -59,11 +59,11 @@ print(json.dumps({"steps": steps, "error": err, "out": out.getvalue()[-2000:]}))
 '''
 
 
-def trace(code, timeout=5):
+def trace(code, timeout=5, cwd=None):
     with tempfile.TemporaryDirectory(prefix="codekata-dbg-") as tmp:
         try:
             p = subprocess.run(["python3", "-I", "-c", TRACER], input=code, capture_output=True, text=True,
-                               timeout=timeout, cwd=tmp, env=dict(os.environ, PYTHONHASHSEED="0"))
+                               timeout=timeout, cwd=cwd or tmp, env=dict(os.environ, PYTHONHASHSEED="0"))
         except subprocess.TimeoutExpired:
             return {"steps": [], "error": "Timeout", "out": ""}
     try:
@@ -117,9 +117,9 @@ def _frame(code_lines, data, i, title, auto):
     return L
 
 
-def replay(code, keys, title="", sound=None):
-    """keys: 이미 cbreak 상태인 Keys 인스턴스."""
-    data = trace(code)
+def replay(code, keys, title="", sound=None, cwd=None):
+    """keys: 이미 cbreak 상태인 Keys 인스턴스. cwd: 입력 파일이 있는 작업 폴더(실기 작업형)."""
+    data = trace(code, cwd=cwd)
     code_lines = code.rstrip("\n").splitlines()
     if not data["steps"]:
         fx.show([fx.c(" KILLCAM ", fx.BLACK, bg=fx.RED, bold=True), "",

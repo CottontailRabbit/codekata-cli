@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
-from . import VERSION, ai, bank, fx, i18n, rank, store, tracer
+from . import VERSION, ai, bank, exam, fx, i18n, rank, store, tracer
 from .game import MODES, Game, mode_label, summary_screen
 from .i18n import tr
 from .keys import Keys
@@ -75,11 +75,16 @@ def get_source(cfg, history, offline=False):
 
 # ─── 게임 실행 ──────────────────────────────────────────
 
-def play(cfg, opts, mode, langs, stages, keys=None):
+def play(cfg, opts, mode, langs, stages, keys=None, task=None):
     history = store.load_history()
     src, prov = get_source(cfg, history, opts.offline)
-    kinds = ["rush", "kata", "quiz"] if mode == "mix" else [mode]
-    src.warm(kinds, langs)
+    if mode.startswith("exam"):
+        kinds = ["quiz", "kata"] if mode == "exam" else [mode[5:]]
+        src.warm(kinds, langs, "exam")
+        src.task_pick = task
+    else:
+        kinds = ["rush", "kata", "quiz"] if mode == "mix" else [mode]
+        src.warm(kinds, langs)
     snd = Sound(cfg["sound"] and not opts.no_sound)
     own_keys = keys is None
     if own_keys:
@@ -310,6 +315,16 @@ def auth_lines(cfg):
     return L
 
 
+def exam_list_lines():
+    L = [fx.c(tr("── 로봇SW개발기사 실기 · 실전 작업형 ──", "── Robot SW engineer practical · real tasks ──"), fx.CYAN, bold=True),
+         fx.c(tr("입력 TXT → 로봇 공식 계산 → 요구 형식 그대로 output.txt. Python/C++ 모범답안은 같은 출력으로 검증됨",
+                 "input TXT → robot formulas → output.txt in the exact format. Python/C++ model answers verified to match"), fx.DIM), ""]
+    for t in exam.TASKS:
+        L.append(f"  {fx.c(fx.pad(t['tid'], 10), fx.GOLD, bold=True)}{fx.pad(i18n.pick(t['topic']), 18)}{i18n.pick(t['title'])}")
+    L += ["", fx.c(tr("예: codekata exam task -t ik2 -l cpp", "e.g. codekata exam task -t ik2 -l cpp"), fx.DIM)]
+    return L
+
+
 def doctor_lines(cfg):
     def chk(ok, label, extra=""):
         return (fx.c("✔ ", fx.LIME) if ok else fx.c("✖ ", fx.RED)) + label + (fx.c(f"  {extra}", fx.DIM) if extra else "")
@@ -366,7 +381,9 @@ def menu(cfg, opts):
                 items = [("1", tr("⚔  랭크전", "⚔  Ranked"), tr("믹스 8스테이지 (러시+카타+퀴즈)", "8-stage mix (rush + kata + quiz)")),
                          ("2", tr("⌨  타자 러시", "⌨  Type Rush"), tr("코드 따라치기 · WPM", "type the code · WPM")),
                          ("3", tr("✎  카타", "✎  Kata"), tr("1~2줄 코드 작성 · 실행 채점", "write 1–2 lines · executed & judged")),
-                         ("4", tr("?  퀴즈", "?  Quiz"), tr("코드 읽기 4지선다", "read code · 4 choices"))]
+                         ("4", tr("?  퀴즈", "?  Quiz"), tr("코드 읽기 4지선다", "read code · 4 choices")),
+                         ("5", tr("⚙  실기", "⚙  Exam"), tr("로봇SW개발기사 실기 · 퀴즈→카타→실전 작업형 (Python/C++)",
+                                                          "Robot SW engineer practical · quiz → kata → real task (Python/C++)"))]
                 for k, name, desc in items:
                     L.append(fx.c(f" {k} ", fx.BLACK, bg=fx.GOLD, bold=True) + " " + fx.c(fx.pad(name, 14), fx.WHITE, bold=True)
                              + fx.c(desc, fx.GREY))
@@ -397,6 +414,10 @@ def menu(cfg, opts):
                     src.warm(["rush", "kata", "quiz"], [lang] if lang != "random" else cfg["langs"])
                     continue
                 langs = cfg["langs"] if lang == "random" else [lang]
+                if k == "5":
+                    snd.play("select")
+                    play(cfg, opts, "exam", [lang if lang in exam.EXAM_LANGS else "python"], exam.EXAM_STAGES, keys=keys)
+                    continue
                 mode = {"1": "mix", "2": "rush", "3": "kata", "4": "quiz"}.get(k)
                 if mode:
                     snd.play("select")
@@ -531,6 +552,14 @@ def build_parser():
         q = sub.add_parser(m, help=tr(f"{mode_label(m)} 모드로 바로 시작", f"start {mode_label(m)} mode"))
         q.add_argument("-l", "--lang", default=None)
         q.add_argument("-n", "--stages", type=int, default=None)
+    ex = sub.add_parser("exam", help=tr("로봇SW개발기사 실기 대비 (Python/C++)", "Robot SW engineer practical exam prep (Python/C++)"))
+    ex.add_argument("kind", nargs="?", choices=["mix", "quiz", "kata", "task", "list"], default="mix",
+                    help=tr(f"mix = 랭크전({exam.EXAM_STAGES}스테이지), list = 실전 문제 목록",
+                            f"mix = ranked ({exam.EXAM_STAGES} stages), list = list the real tasks"))
+    ex.add_argument("-l", "--lang", choices=list(exam.EXAM_LANGS), default=None)
+    ex.add_argument("-n", "--stages", type=int, default=None)
+    ex.add_argument("-t", "--task", choices=[t["tid"] for t in exam.TASKS], default=None,
+                    help=tr("실전 작업형 문제 고정", "pin one real task"))
     sub.add_parser("stats", help=tr("통계", "stats"))
     lg = sub.add_parser("log", help=tr("세션 로그 / 타임라인", "session log / timeline"))
     lg.add_argument("sid", nargs="?")
@@ -580,7 +609,7 @@ def main(argv=None):
     if os.environ.get("CODEKATA_SEED"):
         import random
         random.seed(int(os.environ["CODEKATA_SEED"]))
-    interactive = args.cmd in (None, "play", "rush", "kata", "quiz", "debug")
+    interactive = args.cmd in (None, "play", "rush", "kata", "quiz", "debug") or (args.cmd == "exam" and args.kind != "list")
     if interactive and not (sys.stdin.isatty() and sys.stdout.isatty()):
         sys.exit(tr("codekata: 터미널(TTY)에서 실행해 주세요.", "codekata: please run this in a terminal (TTY)."))
 
@@ -591,6 +620,14 @@ def main(argv=None):
         lang = args.lang or cfg.get("lang", "python")
         langs = cfg["langs"] if lang == "random" else [lang]
         play(cfg, opts, mode, langs, args.stages or cfg.get("stages", store.RANKED_STAGES))
+    elif args.cmd == "exam":
+        if args.kind == "list":
+            emit(exam_list_lines())
+            return
+        lang = args.lang or (cfg.get("lang") if cfg.get("lang") in exam.EXAM_LANGS else "python")
+        mode = "exam" if args.kind == "mix" else f"exam-{args.kind}"
+        default_n = {"exam": exam.EXAM_STAGES, "exam-task": 1 if args.task else 2}.get(mode, store.RANKED_STAGES)
+        play(cfg, opts, mode, [lang], args.stages or default_n, task=args.task)
     elif args.cmd == "stats":
         emit(stats_lines(store.load_history()))
     elif args.cmd == "log":

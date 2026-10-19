@@ -105,7 +105,7 @@ def run_cpp(expr, setups, timeout=60):
                            capture_output=True, text=True, timeout=timeout)
         if c.returncode != 0:
             errs = [x.split("error:", 1)[1].strip() for x in c.stderr.splitlines() if "error:" in x]
-            return None, "compile error: " + (errs[0] if errs else c.stderr.strip()[-160:])[:160]
+            return None, tr("컴파일 에러: ", "compile error: ") + (errs[0] if errs else c.stderr.strip()[-160:])[:160]
         try:
             r = subprocess.run([os.path.join(tmp, "k")], capture_output=True, text=True, timeout=5, cwd=tmp)
         except subprocess.TimeoutExpired:
@@ -114,6 +114,14 @@ def run_cpp(expr, setups, timeout=60):
     if r.returncode != 0 or len(vals) != len(setups):
         return None, f"runtime error (exit {r.returncode})"
     return vals, ""
+
+
+def warm_cpp(problem):
+    """모범답안 기대값을 미리 컴파일·계산해 둔다 (백그라운드용)."""
+    if problem.get("_expected") is None:
+        vals, _ = run_cpp(problem["answer"], [problem.get("setup", "")] + list(problem.get("tests", [])))
+        if vals is not None:
+            problem["_expected"] = vals
 
 
 def _same_num(a, b):
@@ -270,9 +278,20 @@ def program_output(lang, code, timeout=5):
         cmd = ["python3", "-I", "-c", code]
     elif lang == "js" and shutil.which("node"):
         cmd = ["node", "-e", code]
+    elif lang == "cpp" and shutil.which("g++"):
+        cmd = None
     else:
         return None
     with tempfile.TemporaryDirectory(prefix="codekata-") as tmp:
+        if cmd is None:
+            src = os.path.join(tmp, "q.cpp")
+            with open(src, "w") as f:
+                f.write(code)
+            c = subprocess.run(["g++", "-std=gnu++17", "-w", "-o", os.path.join(tmp, "q"), src], capture_output=True,
+                               text=True, timeout=90)
+            if c.returncode != 0:
+                return {"ok": False, "out": "", "error": "compile error"}
+            cmd = [os.path.join(tmp, "q")]
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=tmp,
                                env=dict(os.environ, PYTHONHASHSEED="0"))
