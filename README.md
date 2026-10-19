@@ -103,7 +103,7 @@ boss · FLAWLESS (+3,000) for a no-miss, no-hint clear with all hearts. Grades S
 
 Practice the core pattern of the Korean *Robot Software Development Engineer* (로봇소프트웨어개발기사) practical
 exam — **read a TXT input file, compute robot formulas, write the result file in exactly the required format** — in
-Python or C++. Install this branch with `pipx install "git+https://github.com/<OWNER>/<REPO>.git@exam"`.
+Python or C++. Install this branch with `pipx install "git+https://github.com/CottontailRabbit/codekata-cli.git@exam"`.
 
 ```bash
 codekata exam                      # ranked, 5 stages: quiz → kata → quiz → kata → real task (boss)

@@ -93,7 +93,7 @@ FLAWLESS(노미스·노힌트·하트 3개 클리어 +3,000). 등급 SS / S / A 
 ## 🤖 로봇소프트웨어개발기사 실기 트랙 (`exam` 브랜치)
 
 실기(작업형)의 기본 틀 — **주어진 TXT 입력 파일을 읽어 로봇 공식으로 계산하고, 요구한 형식 그대로 결과 파일에 쓰기** —
-를 Python / C++로 연습하는 모드입니다. 이 브랜치로 설치: `pipx install "git+https://github.com/<OWNER>/<REPO>.git@exam"`
+를 Python / C++로 연습하는 모드입니다. 이 브랜치로 설치: `pipx install "git+https://github.com/CottontailRabbit/codekata-cli.git@exam"`
 
 ```bash
 codekata exam                      # 랭크전 5스테이지: 퀴즈 → 카타 → 퀴즈 → 카타 → 실전 작업형(보스)
