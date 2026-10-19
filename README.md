@@ -55,9 +55,9 @@ codekata doctor                  # should show ✔ codex (ChatGPT) login
 ## Install
 
 ```bash
-pipx install git+https://github.com/<OWNER>/<REPO>.git
+pipx install git+https://github.com/CottontailRabbit/codekata-cli.git
 # or from a clone
-git clone https://github.com/<OWNER>/<REPO>.git && cd <REPO> && pipx install .   # (pip install --user . works too)
+git clone https://github.com/CottontailRabbit/codekata-cli.git && cd codekata-cli && pipx install .   # (pip install --user . works too)
 ```
 
 Then run `codekata`. A terminal of at least 90×32 with 256 colors is recommended.
