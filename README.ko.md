@@ -47,9 +47,9 @@ codekata doctor                  # ✔ codex(ChatGPT) 로그인 이 보이면 �
 ## 설치
 
 ```bash
-pipx install git+https://github.com/<OWNER>/<REPO>.git
+pipx install git+https://github.com/CottontailRabbit/codekata-cli.git
 # 또는 클론해서
-git clone https://github.com/<OWNER>/<REPO>.git && cd <REPO> && pipx install .   # (pip install --user . 도 가능)
+git clone https://github.com/CottontailRabbit/codekata-cli.git && cd codekata-cli && pipx install .   # (pip install --user . 도 가능)
 ```
 
 설치 후 `codekata`로 실행합니다. 터미널은 90×32 이상, 256색을 권장합니다.
