@@ -59,6 +59,39 @@ RUSH = [
     R("go", "채널", "ch := make(chan int, 10)\ngo func() { ch <- 42 }()"),
 ]
 
+# 타자 러시: 무슨 코드인지(desc) + 다 친 뒤 해설(explain)
+RUSH_INFO = {
+    "딕셔너리 컴프리헨션": ("0~9 중 홀수 n을 키로, n²을 값으로 하는 딕셔너리", "`{k: v for ... if ...}` — 필터(`if n % 2`)와 변환을 한 줄에!"),
+    "with 파일 읽기": ("파일을 UTF-8로 열어 줄 끝 개행을 뗀 줄 목록 만들기", "`with`가 끝나면 파일이 자동으로 닫힙니다. `rstrip()`으로 `\n` 제거!"),
+    "clamp": ("x를 [lo, hi] 범위 안으로 자르는 함수", "`min`으로 위를 막고 `max`로 아래를 막는 클램프의 정석!"),
+    "리더보드 출력": ("점수 높은 순으로 순위·이름·점수를 정렬해 출력", "`key=lambda kv: -kv[1]`로 내림차순, `:>2` `:<10` `:,`로 칸 맞춤과 천 단위 쉼표!"),
+    "dataclass": ("데미지와 크리티컬 여부를 담는 불변 데이터 클래스", "`frozen=True`면 필드를 못 바꾸고 해시도 됩니다. 기본값 필드는 뒤쪽에!"),
+    "async fetch": ("HTTP 세션으로 URL을 비동기 요청해 JSON 받기", "`async with`로 응답을 닫고, `await r.json()`으로 본문을 기다립니다."),
+    "페어 묶기": ("리스트를 앞뒤 두 개씩 짝지어 튜플 목록으로", "짝수 인덱스 `xs[::2]`와 홀수 인덱스 `xs[1::2]`를 `zip`으로 지퍼처럼!"),
+    "첫 매치": ("조건(ok)을 만족하는 첫 원소, 없으면 None", "제너레이터 + `next(it, 기본값)` — 찾는 즉시 멈춰서 효율적!"),
+    "Counter": ("텍스트에서 가장 많이 나온 단어 3개 (대소문자 무시)", "`Counter`가 세고 `most_common(3)`이 상위 3개를 (단어, 횟수)로 줍니다."),
+    "reduce 합계": ("배열의 모든 원소 합계", "`reduce`의 두 번째 인자 0이 초기값. 빈 배열에서도 안전합니다."),
+    "중복 제거": ("아이템들의 id만 뽑아 중복 없는 배열로", "`Set`으로 중복 제거 후 스프레드 `[...]`로 다시 배열!"),
+    "clamp 화살표": ("x를 [lo, hi]로 자르는 화살표 함수 내보내기", "`Math.min(Math.max(x, lo), hi)` — 안쪽이 아래, 바깥이 위를 막습니다."),
+    "이벤트 바인딩": ("모든 버튼에 클릭 핸들러 hit 연결", "`querySelectorAll`은 NodeList를 주고 `forEach`로 하나씩 `addEventListener`!"),
+    "async/await": ("URL을 요청해 실패면 에러, 성공이면 JSON 파싱", "`fetch`는 404여도 reject하지 않습니다. `res.ok`를 직접 확인해야 해요!"),
+    "구조분해": ("player에서 name, score(기본 0), 나머지 필드를 꺼내기", "기본값 `= 0`은 undefined일 때만, `...rest`는 남은 속성을 객체로 모읍니다."),
+    "필터 합계": ("벡터에서 양수만 골라 합계 (i32)", "`|&&x|` 패턴으로 이중 참조를 벗기고, `sum`은 타입 표기 `: i32`가 필요해요."),
+    "clamp fn": ("f64 값을 [lo, hi]로 자르는 함수", "`x.max(lo).min(hi)` 메서드 체인. 마지막 식이 세미콜론 없이 반환값!"),
+    "match": ("명령 문자열이 hit면 콤보 +1, 아니면 리셋", "`as_str()`로 `&str` 패턴 매칭, `_`가 나머지 전부를 받습니다."),
+    "split collect": ("한 줄을 공백 기준으로 나눠 단어 벡터로", "`split_whitespace`는 연속 공백도 처리, `collect`는 타입 표기로 결과를 정합니다."),
+    "derive struct": ("디버그 출력·복제·비교가 되는 Hit 구조체", "`#[derive]`가 Debug/Clone/PartialEq 구현을 자동 생성!"),
+    "if let": ("HP가 남은 첫 보스를 찾아 데미지 주기", "`iter_mut().find`로 가변 참조를 얻고 `if let Some`으로 있을 때만 처리!"),
+    "람다 정렬": ("벡터를 내림차순 정렬", "비교 람다가 `a > b`면 내림차순. `std::greater<>()`를 넘겨도 같습니다."),
+    "find_if": ("id가 같은 첫 원소의 반복자 찾기", "`[&]`로 id를 참조 캡처, 못 찾으면 `v.end()`가 돌아옵니다."),
+    "구조적 바인딩": ("맵의 이름과 점수를 한 줄씩 출력", "C++17 `auto& [k, v]`로 pair를 바로 풀어 씁니다. `'\n'`이 `endl`보다 빠름!"),
+    "make_unique": ("이름과 HP로 Boss 객체를 unique_ptr로 생성", "`make_unique`는 `new` 없이 예외 안전하게 소유권 하나짜리 포인터를 만듭니다."),
+    "템플릿 clamp": ("어떤 타입이든 [lo, hi]로 자르는 템플릿 함수", "`template <typename T>` 한 번이면 int/double 모두 OK. C++17엔 `std::clamp`도 있어요."),
+    "lock_guard": ("뮤텍스를 잠그고 작업을 큐에 넣기", "`lock_guard`는 스코프가 끝나면 자동 해제(RAII), `std::move`로 복사 없이 넣기!"),
+    "range 루프": ("인덱스 i와 값 v로 가중 합 구하기", "Go의 `range`는 (인덱스, 값)을 함께 줍니다. 안 쓰면 `_`로!"),
+    "에러 래핑": ("에러가 있으면 맥락을 붙여 감싸서 반환", "`%w`로 감싸면 나중에 `errors.Is`로 원인 에러를 찾을 수 있습니다."),
+    "채널": ("버퍼 10짜리 채널을 만들고 고루틴에서 42 보내기", "`make(chan int, 10)`은 버퍼 채널, `go func(){}()`는 즉시 실행되는 고루틴!"),
+}
 KATA = [
     K("python", "중복 제거 + 정렬", "nums의 중복을 제거하고 오름차순 정렬한 리스트를 만드세요.",
       "sorted(set(nums))", setup="nums = [3, 1, 4, 1, 5, 9, 2, 6]", tests=["nums = [5, 5, 2]"],
@@ -277,6 +310,9 @@ def pid(p):
     key = f"{p['kind']}|{p['lang']}|{p['title']}"
     return hashlib.sha1(key.encode()).hexdigest()[:10]
 
+
+for _r in RUSH:
+    _r["desc"], _r["explain"] = RUSH_INFO.get(_r["title"], ("", _r.get("explain", "")))
 
 ALL = RUSH + KATA + QUIZ
 for _p in ALL:
