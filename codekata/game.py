@@ -368,8 +368,10 @@ class Game:
         def body():
             icon, col = kind_icon("rush")
             out = [fx.c(icon, col, bold=True) + "  " + fx.c(p["title"], fx.WHITE, bold=True) +
-                   fx.c(f"   [{p.get('source', 'bank')}]", fx.DARK),
-                   fx.c(tr("보이는 코드를 그대로 치세요. 들여쓰기 자동 · 오타는 고쳐야 전진 · Tab=공백 4칸 · ESC 패스",
+                   fx.c(f"   [{p.get('source', 'bank')}]", fx.DARK)]
+            if p.get("desc"):
+                out.append(fx.c(tr("무슨 코드? ▸ ", "What it does ▸ "), fx.SKY, bold=True) + fx.c(p["desc"], fx.SKY))
+            out += [fx.c(tr("보이는 코드를 그대로 치세요. 들여쓰기 자동 · 오타는 고쳐야 전진 · Tab=공백 4칸 · ESC 패스",
                            "Type the code exactly. Auto-indent · fix typos to advance · Tab = 4 spaces · ESC skip"),
                         fx.DIM), ""]
             idx = 0
@@ -411,6 +413,7 @@ class Game:
             if k == "ESC":
                 self.say("c", caster.say("skip"))
                 self.miss(lose_heart=False, reason="rush_skip")
+                self.after(p)
                 return {"ok": False, "skipped": True}
             if t_start is None:
                 t_start = time.monotonic()
@@ -469,8 +472,10 @@ class Game:
             perfect = bad == 0
             self.deal(n * 4.5 * speed * acc, crit=perfect, label="PERFECT" if perfect else "CLEAR",
                       event="perfect" if perfect else ("speed" if wpm >= 60 else "hit"), sec=f"{el:.1f}")
+            self.after(p)
             return {"ok": True, "wpm": wpm, "acc": acc, "perfect": perfect}
         self.miss(lose_heart=acc < 0.75, reason="rush_acc")
+        self.after(p)
         return {"ok": False, "wpm": wpm, "acc": acc}
 
     # ─── 스테이지: 카타 ──────────────────────────────────

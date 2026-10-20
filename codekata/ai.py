@@ -66,8 +66,10 @@ TEXT_LANG = {"ko": "사용자에게 보이는 모든 텍스트(title, desc, ques
 KIND_SPEC = {
     "rush": """타자 러시(코드 따라 치기)용 코드 조각.
 - code: 실무에서 자주 쓰는 관용구 1~4줄, 한 줄 70자 이하, ASCII 문자만(한글 문자열 금지), 탭 금지(스페이스 4칸 들여쓰기), 주석 금지
-- title: 무엇을 하는 코드인지 짧게
-- desc/setup/question/hint/answer: 빈 문자열, tests/accept/options: 빈 배열, correct: 0""",
+- title: 짧은 이름
+- desc: 이 코드가 무엇을 하는지 한 문장 (예: "0~9 중 홀수 n을 키로, n²을 값으로 하는 딕셔너리")
+- explain: 다 친 뒤 보여줄 핵심 문법/관용구 해설 1~2문장
+- setup/question/hint/answer: 빈 문자열, tests/accept/options: 빈 배열, correct: 0""",
     "kata": """1~2줄로 푸는 코딩 카타.
 - desc: 무엇을 만들지 구체적으로 (변수명 명시). 정답을 그대로 쓰지 말 것
 - setup: 문제에 필요한 변수 정의 코드 (사용자에게 보여줌). answer에 필요한 import도 반드시 setup에 포함

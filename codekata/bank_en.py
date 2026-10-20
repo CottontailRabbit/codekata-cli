@@ -135,3 +135,39 @@ EN = {
     "배열의 포인터 붕괴": {"title": "array-to-pointer decay", "question": "What is printed? (64-bit, int = 4 bytes)",
                     "explain": "The parameter `int arr[10]` is really `int*`! The array decays to a pointer and sizeof is 8. Use `std::array` or `span`."},
 }
+
+# 타자 러시 설명 (desc / explain)
+RUSH_EN = {
+    '딕셔너리 컴프리헨션': ('dict of odd n in 0–9 mapped to n²', '`{k: v for ... if ...}` — filter (`if n % 2`) and transform in one line!'),
+    'with 파일 읽기': ('open a file as UTF-8 and list its lines without newlines', '`with` closes the file automatically; `rstrip()` drops the `\\n`!'),
+    'clamp': ('function that clamps x into [lo, hi]', '`min` caps the top, `max` caps the bottom — the classic clamp!'),
+    '리더보드 출력': ('print rank, name and score sorted by score', '`key=lambda kv: -kv[1]` sorts descending; `:>2` `:<10` `:,` align and add thousands separators!'),
+    'dataclass': ('immutable data class holding damage and a crit flag', '`frozen=True` makes fields read-only and the class hashable. Defaults go last!'),
+    'async fetch': ('request a URL asynchronously and read JSON', '`async with` closes the response; `await r.json()` waits for the body.'),
+    '페어 묶기': ('pair up a list two by two into tuples', 'Even indices `xs[::2]` and odd `xs[1::2]`, zipped together like a zipper!'),
+    '첫 매치': ('first item with .ok set, or None', 'A generator plus `next(it, default)` stops as soon as it finds one!'),
+    'Counter': ('top 3 most frequent words, case-insensitive', '`Counter` counts and `most_common(3)` returns (word, count) pairs.'),
+    'reduce 합계': ('sum of all array elements', 'The second argument 0 is the initial value — safe on empty arrays.'),
+    '중복 제거': ('unique ids of the items as an array', '`Set` removes duplicates, spread `[...]` turns it back into an array!'),
+    'clamp 화살표': ('exported arrow function that clamps x into [lo, hi]', '`Math.min(Math.max(x, lo), hi)` — inner caps the bottom, outer the top.'),
+    '이벤트 바인딩': ('attach the click handler hit to every button', '`querySelectorAll` returns a NodeList; `forEach` + `addEventListener` each one!'),
+    'async/await': ('fetch a URL, throw on failure, otherwise parse JSON', "`fetch` doesn't reject on 404 — check `res.ok` yourself!"),
+    '구조분해': ('pull name, score (default 0) and the rest out of player', '`= 0` applies only for undefined; `...rest` collects the remaining props.'),
+    '필터 합계': ('sum of the positive numbers in a vector (i32)', '`|&&x|` strips the double reference; `sum` needs the `: i32` annotation.'),
+    'clamp fn': ('function clamping an f64 into [lo, hi]', 'Method chain `x.max(lo).min(hi)`; the last expression without `;` is returned!'),
+    'match': ('bump the combo on "hit", reset otherwise', '`as_str()` lets you match on `&str`; `_` catches everything else.'),
+    'split collect': ('split a line on whitespace into a Vec of words', '`split_whitespace` handles runs of spaces; the type annotation drives `collect`.'),
+    'derive struct': ('Hit struct that can be debug-printed, cloned and compared', '`#[derive]` generates the Debug/Clone/PartialEq impls for you!'),
+    'if let': ('find the first boss with HP left and damage it', '`iter_mut().find` gives a mutable ref; `if let Some` runs only when found!'),
+    '람다 정렬': ('sort a vector in descending order', 'A comparator returning `a > b` sorts descending — same as `std::greater<>()`.'),
+    'find_if': ('iterator to the first element with a matching id', '`[&]` captures id by reference; not found returns `v.end()`.'),
+    '구조적 바인딩': ('print each name and score of a map', "C++17 `auto& [k, v]` unpacks the pair; `'\\n'` is faster than `endl`!"),
+    'make_unique': ('create a Boss with name and HP as a unique_ptr', '`make_unique` builds a single-owner pointer exception-safely, no `new`.'),
+    '템플릿 clamp': ('template that clamps any type into [lo, hi]', 'One `template <typename T>` covers int and double. C++17 also has `std::clamp`.'),
+    'lock_guard': ('lock a mutex and push a job onto a queue', '`lock_guard` unlocks at scope exit (RAII); `std::move` avoids a copy!'),
+    'range 루프': ('weighted sum using index i and value v', "Go's `range` yields (index, value); use `_` for the one you don't need!"),
+    '에러 래핑': ('wrap an error with context and return it', 'Wrapping with `%w` lets `errors.Is` find the cause later.'),
+    '채널': ('make a buffered channel and send 42 from a goroutine', '`make(chan int, 10)` is buffered; `go func(){}()` starts a goroutine right away!'),
+}
+for _k, (_d, _e) in RUSH_EN.items():
+    EN.setdefault(_k, {}).update(desc=_d, explain=_e)
