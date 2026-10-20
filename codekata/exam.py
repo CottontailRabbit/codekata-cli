@@ -23,7 +23,7 @@ from .i18n import pick, tr
 TASK_DIR = Path(__file__).with_name("tasks")
 EXAM_LANGS = ("python", "cpp")
 EXAM_STAGES = 5                     # 랭크전 규격: 퀴즈·카타·퀴즈·카타·실전
-EXAM_ORDER = ["quiz", "kata", "quiz", "kata", "task"]
+EXAM_ORDER = ["quiz", "kata", "clone", "quiz", "task"]
 TASK_LIMIT = 25 * 60                # 실전 1문제 제한 시간(초)
 
 
@@ -290,6 +290,33 @@ def make_task(tid, lang, seed=None):
             "hint": pick(t["hint"]), "input": inp, "expected": reference_output(tid, inp), "explain": pick(t["hint"])}
 
 
+_TRAIL_COMMENT = re.compile(r"\s{2,}(#|//)\s.*$")
+
+
+def clone_lines(code):
+    """클론코딩용 줄 목록 [(원래 줄, 들여쓰기, 칠 내용 | None)]. 빈 줄·주석 줄은 자동, 줄 끝 주석은 빼고 친다."""
+    out = []
+    for raw in code.rstrip("\n").split("\n"):
+        body = raw.strip()
+        indent = raw[:len(raw) - len(raw.lstrip())]
+        if not body or body.startswith(("#", "//")):
+            out.append((raw, indent, None))
+        else:
+            out.append((raw, indent, _TRAIL_COMMENT.sub("", raw).strip()))
+    return out
+
+
+def same_line(typed, target):
+    return " ".join(typed.split()) == " ".join(target.split())
+
+
+def make_clone(tid, lang, seed=None):
+    p = make_task(tid, lang, seed)
+    p.update(kind="clone", id=f"clone-{tid}", code=model_answer(tid, lang),
+             title=tr(f"클론코딩 · {p['title']}", f"Clone · {p['title']}"))
+    return p
+
+
 # ─── 작업 폴더 · 실행 · 채점 ─────────────────────────────────
 
 STARTER = {
@@ -338,7 +365,7 @@ def _comment(text, prefix, width=96):
 
 
 def workspace(sid, p, scaffold=True):
-    ws = store.HOME / "exam" / f"{time.strftime('%Y%m%d')}-{sid}-{p['tid']}-{p['lang']}"
+    ws = store.HOME / "exam" / f"{time.strftime('%Y%m%d')}-{sid}-{p['kind']}-{p['tid']}-{p['lang']}"
     ws.mkdir(parents=True, exist_ok=True)
     (ws / "input.txt").write_text(p["input"], encoding="utf-8")
     src = ws / ("solution.cpp" if p["lang"] == "cpp" else "solution.py")
@@ -458,9 +485,226 @@ def grade(expected, got):
 
 # ─── 공식/함정 퀴즈 · 카타 (Python / C++) ─────────────────────
 
-def Q(lang, title, code, question, options, correct, explain):
+def Q(lang, title, code, question, options, correct, explain, check, opt_code):
     return {"kind": "quiz", "track": "exam", "lang": lang, "title": title, "code": code, "question": question,
-            "options": list(options), "correct": correct, "explain": explain}
+            "options": list(options), "correct": correct, "explain": explain, "check": check, "opt_code": opt_code}
+
+
+def QB(lang, title, code, question, options, correct, expect, explain):
+    """빈칸형: code의 ____ 에 보기(코드)를 넣었을 때 정답만 expect를 출력한다."""
+    return Q(lang, title, code, question, options, correct, explain, {"type": "blank", "expect": expect}, True)
+
+
+def QL(lang, title, code, intent, lines, bug, fix, expect, explain):
+    """버그 줄형: bug 번째 줄을 fix로 고치면 expect가 출력되고, 원래 코드는 다르게 동작한다."""
+    question = (f"의도: {intent[0]} — 버그가 있는 줄은?", f"Intent: {intent[1]} — which line is the bug?")
+    options = [(f"{n}번 줄", f"line {n}") for n in lines]
+    return Q(lang, title, code, question, options, lines.index(bug), explain,
+             {"type": "line", "line": bug, "fix": fix, "expect": expect}, False)
+
+
+BLANK = ("빈칸 ____ 에 들어갈 코드는?", "Which code fills the blank ____?")
+
+QUIZ = [
+    QB("python", ("IK θ1 — atan2", "IK θ1 — atan2"),
+       "import math\n\nL1, L2 = 1.0, 0.5\nx, y = -0.6, 0.9                     # 2사분면 목표점\n"
+       "D = (x * x + y * y - L1 * L1 - L2 * L2) / (2 * L1 * L2)\nt2 = math.acos(D)\nt1 = ____\n"
+       "print(f\"{math.degrees(t1):.1f} {math.degrees(t2):.1f}\")",
+       ("2사분면 목표에서도 맞는 θ1 코드는?", "Which θ1 works even for a quadrant-II target?"),
+       ["math.atan(y / x) - math.atan(L2 * math.sin(t2) / (L1 + L2 * math.cos(t2)))",
+        "math.atan2(y, x) - math.atan2(L2 * math.sin(t2), L1 + L2 * math.cos(t2))",
+        "math.atan2(x, y) - math.atan2(L2 * math.sin(t2), L1 + L2 * math.cos(t2))",
+        "math.atan2(y, x) + math.atan2(L2 * math.sin(t2), L1 + L2 * math.cos(t2))"], 1, "96.3 94.6",
+       ("`atan(y/x)`는 x의 부호를 잃어 사분면을 착각하고, `atan2`는 (y, x) 순서입니다. 빼는 쪽이 θ2 > 0 해!",
+        "`atan(y/x)` loses the sign of x; `atan2` takes (y, x). Subtracting gives the θ2 > 0 solution!")),
+    QL("python", ("FK 각도 단위", "FK angle units"),
+       "import math\nL1, L2 = 1.0, 0.5\nd1, d2 = 30, 45\nx = L1 * math.cos(d1) + L2 * math.cos(d1 + d2)\n"
+       "y = L1 * math.sin(math.radians(d1)) + L2 * math.sin(math.radians(d1 + d2))\nprint(f\"{x:.3f} {y:.3f}\")",
+       ("30°·45° 자세의 말단 좌표 출력", "print the end-effector of the 30°/45° pose"), [3, 4, 5, 6], 4,
+       "x = L1 * math.cos(math.radians(d1)) + L2 * math.cos(math.radians(d1 + d2))", "0.995 0.983",
+       ("4번 줄만 도 값을 그대로 `cos`에 넣었습니다. 5번 줄처럼 `math.radians`로 바꿔야 해요.",
+        "Line 4 passes degrees straight into `cos`; convert with `math.radians` like line 5.")),
+    QB("python", ("tf 포함 시간축", "Time axis including tf"),
+       "tf, dt = 2.0, 0.5\nts = ____\nprint(ts)", ("0부터 tf까지(포함) 시간 목록을 만드는 코드는?", "Which code lists times from 0 to tf inclusive?"),
+       ["[k * dt for k in range(round(tf / dt))]", "list(range(0, tf, dt))",
+        "[k * dt for k in range(round(tf / dt) + 1)]", "[k * dt for k in range(int(tf * dt) + 1)]"], 2,
+       "[0.0, 0.5, 1.0, 1.5, 2.0]",
+       ("`range`는 끝을 빼니 +1, 그리고 정수 k에 dt를 곱합니다. `range`는 float 간격을 못 받아요.",
+        "`range` excludes the end, hence +1; multiply an integer k by dt. `range` can't take a float step.")),
+    QB("python", ("출력 형식", "Output format"),
+       "x, y = 0.8660254, 0.5\nline = ____\nprint(line)",
+       ("'소수 3자리, 공백 구분' 형식을 만드는 코드는?", "Which code gives '3 decimals, space separated'?"),
+       ['f"{round(x, 3)} {round(y, 3)}"', 'f"{x:.3f} {y:.3f}"', 'f"{x:3f} {y:3f}"', '"%.3f,%.3f" % (x, y)'], 1,
+       "0.866 0.500",
+       ("`round(0.5, 3)`은 0.5로 찍혀 자리수가 깨지고, `:3f`는 폭 3(소수 6자리)입니다. `:.3f`가 정답!",
+        "`round(0.5, 3)` prints 0.5 and `:3f` means width 3 with 6 decimals. `:.3f` is the one!")),
+    QL("python", ("입력 줄 나누기", "Splitting input lines"),
+       'lines = ["30  45\\n", "60 90\\n"]\nout = []\nfor line in lines:\n'
+       '    a, b = map(float, line.strip().split(" "))\n    out.append(a + b)\nprint(out)',
+       ("공백 개수와 상관없이 두 값을 더하기", "add the two values whatever the spacing"), [1, 3, 4, 5], 4,
+       "    a, b = map(float, line.split())", "[75.0, 150.0]",
+       ("`split(\" \")`은 두 칸 공백에서 빈 문자열을 만들어 값이 3개가 됩니다. 인자 없는 `split()`!",
+        "`split(\" \")` yields an empty string on double spaces (3 values). Use `split()` with no argument!")),
+    QB("python", ("CAN 속도 int16", "CAN velocity int16"),
+       'frame = bytes.fromhex("18FC2C01")      # B0 B1 = 속도(int16, little-endian)\nvel = ____\nprint(vel)',
+       ("B0~B1을 부호 있는 속도로 읽는 코드는?", "Which code reads B0–B1 as a signed velocity?"),
+       ['int.from_bytes(frame[0:2], "little")', 'int.from_bytes(frame[0:2], "big", signed=True)',
+        'int.from_bytes(frame[2:4], "little", signed=True)', 'int.from_bytes(frame[0:2], "little", signed=True)'], 3,
+       "-1000",
+       ("리틀엔디언 18 FC → 0xFC18. 음수가 될 수 있는 값은 `signed=True` 필수!",
+        "Little-endian 18 FC → 0xFC18. Values that can be negative need `signed=True`!")),
+    QB("python", ("Dijkstra 힙에 넣기", "Pushing into the Dijkstra heap"),
+       'import heapq\n\ndist = {"B": 4, "A": 0, "C": 1}\npq = []\nfor node, d in dist.items():\n    ____\n'
+       "print(heapq.heappop(pq))",
+       ("가장 가까운 노드가 먼저 나오게 하는 코드는?", "Which code makes the closest node pop first?"),
+       ["heapq.heappush(pq, (node, d))", "pq.append((d, node))", "heapq.heappush(pq, (d, node))",
+        "heapq.heappush(pq, (-d, node))"], 2, "(0, 'A')",
+       ("튜플은 첫 값으로 비교되니 (거리, 노드) 순서로 `heappush`. `append`는 힙 성질이 깨집니다.",
+        "Tuples compare by the first item, so `heappush` (dist, node). Plain `append` breaks the heap.")),
+    QL("python", ("Floyd 갱신식", "Floyd update"),
+       'INF = float("inf")\nD = [[0, 5, INF], [INF, 0, 2], [1, INF, 0]]\nn = len(D)\nfor k in range(n):\n'
+       "    for i in range(n):\n        for j in range(n):\n            D[i][j] = min(D[i][j], D[i][k] + D[j][k])\n"
+       "print(D[0][2], D[2][1])",
+       ("모든 쌍 최단 거리 0→2, 2→1 출력", "print all-pairs distances 0→2 and 2→1"), [4, 5, 6, 7], 7,
+       "            D[i][j] = min(D[i][j], D[i][k] + D[k][j])", "7 6",
+       ("경유 경로는 i→k 다음 k→j, 즉 `D[k][j]`. 인덱스 순서 하나가 전체 행렬을 망칩니다.",
+        "A detour goes i→k then k→j: `D[k][j]`. One swapped index ruins the matrix.")),
+    QB("python", ("격자 좌표", "Grid coordinates"),
+       "grid = [[0, 0, 0],\n        [0, 0, 0]]\nx, y = 2, 1            # 그림 좌표: x = 열, y = 행\n____\nprint(grid)",
+       ("(x, y) 칸을 벽(1)으로 만드는 코드는?", "Which code marks cell (x, y) as a wall (1)?"),
+       ["grid[x][y] = 1", "grid[y][x] = 1", "grid[y - 1][x - 1] = 1", "grid[x - 1][y] = 1"], 1,
+       "[[0, 0, 0], [0, 0, 1]]",
+       ("리스트는 `grid[행][열]` = `grid[y][x]`. 그림 좌표와 순서가 반대입니다.",
+        "Lists are `grid[row][col]` = `grid[y][x]` — the opposite order of plot coordinates.")),
+    QB("python", ("엑셀용 CSV 인코딩", "CSV encoding for Excel"),
+       'import csv\n\nwith open("out.csv", "w", ____, newline="") as f:\n    csv.writer(f).writerow(["관절", "온도"])\n'
+       'print(open("out.csv", "rb").read()[:3])',
+       ("엑셀에서 한글이 안 깨지는 UTF-8로 저장하는 코드는?", "Which keeps Korean readable in Excel while saving UTF-8?"),
+       ['encoding="utf-8"', 'encoding="utf-16"', 'encoding="utf-8-sig"', 'encoding="latin-1"'], 2,
+       "b'\\xef\\xbb\\xbf'",
+       ("엑셀은 BOM(EF BB BF)이 있어야 UTF-8로 인식합니다. `utf-8-sig`가 BOM을 붙여 줘요.",
+        "Excel needs the BOM (EF BB BF) to detect UTF-8; `utf-8-sig` writes it.")),
+    QB("python", ("acos 도메인", "acos domain"),
+       "import math\n\nD = 1.0000000000000002        # 부동소수 오차로 1을 살짝 넘음\nt2 = ____\nprint(round(t2, 6))",
+       ("오차가 있어도 θ2를 구하는 코드는?", "Which code still computes θ2 despite the float error?"),
+       ["math.acos(D)", "math.acos(max(-1.0, min(1.0, D)))", "math.acos(D / 2)", "math.acos(abs(D))"], 1, "0.0",
+       ("1을 살짝 넘으면 `math.acos`는 ValueError. [−1, 1]로 잘라서 넣습니다 (도달 불가 판정은 그 전에!).",
+        "Just above 1, `math.acos` raises ValueError. Clamp into [−1, 1] (check reachability first!).")),
+    QB("python", ("CUBIC a3", "Cubic a3"),
+       "q0, qf, tf = 0.0, 90.0, 3.0\na2 = 3 * (qf - q0) / tf ** 2\na3 = ____\n"
+       "print(round(q0 + a2 * tf**2 + a3 * tf**3, 6))           # q(tf) 검산",
+       ("q(tf) = qf가 되게 하는 a3는?", "Which a3 makes q(tf) = qf?"),
+       ["2 * (qf - q0) / tf ** 3", "-2 * (qf - q0) / tf ** 2", "-2 * (qf - q0) / tf ** 3",
+        "-3 * (qf - q0) / tf ** 3"], 2, "90.0",
+       ("a2 = 3Δq/tf², a3 = −2Δq/tf³. 마지막 줄처럼 q(tf) = qf 검산을 습관으로!",
+        "a2 = 3Δq/tf², a3 = −2Δq/tf³. Make the q(tf) = qf check on the last line a habit!")),
+    QL("cpp", ("정수 나눗셈", "Integer division"),
+       "#include <cstdio>\nint main() {\n    double a = 4.0;\n    int t = 2;\n    double q = 1 / 2 * a * t * t;\n"
+       "    std::printf(\"%.3f\\n\", q);\n}",
+       ("q = ½·a·t² 출력", "print q = ½·a·t²"), [3, 4, 5, 6], 5, "    double q = 0.5 * a * t * t;", "8.000",
+       ("`1 / 2`는 int끼리라 0! `0.5` 또는 `1.0 / 2`로 써야 합니다.",
+        "`1 / 2` is integer division = 0! Write `0.5` or `1.0 / 2`.")),
+    QB("cpp", ("cout 자리수", "cout precision"),
+       "#include <iomanip>\n#include <iostream>\nint main() {\n    double x = 2.0 / 3, y = 1.0;\n"
+       "    std::cout << ____ << x << \" \" << y << \"\\n\";\n}",
+       ("'0.667 1.000'처럼 소수 3자리로 찍는 코드는?", "Which prints three decimals like '0.667 1.000'?"),
+       ["std::setprecision(3)", "std::fixed", "std::fixed << std::setprecision(3)", "std::setw(3)"], 2, "0.667 1.000",
+       ("`setprecision`만 쓰면 유효숫자 3자리(1.0 → 1), `fixed`와 함께 써야 소수점 아래 자리수가 됩니다.",
+        "`setprecision` alone means 3 significant digits (1.0 → 1); with `fixed` it means decimals.")),
+    QB("cpp", ("IK θ1 (C++)", "IK θ1 (C++)"),
+       "#include <cmath>\n#include <cstdio>\nint main() {\n    double L1 = 1.0, L2 = 0.5, x = -0.6, y = 0.9;\n"
+       "    double t2 = std::acos((x * x + y * y - L1 * L1 - L2 * L2) / (2 * L1 * L2));\n    double t1 = ____;\n"
+       "    std::printf(\"%.1f %.1f\\n\", t1 * 180 / M_PI, t2 * 180 / M_PI);\n}",
+       ("2사분면 목표에서도 맞는 θ1 코드는?", "Which θ1 works even for a quadrant-II target?"),
+       ["std::atan2(x, y) - std::atan2(L2 * std::sin(t2), L1 + L2 * std::cos(t2))",
+        "std::atan(y / x) - std::atan(L2 * std::sin(t2) / (L1 + L2 * std::cos(t2)))",
+        "std::atan2(y, x) + std::atan2(L2 * std::sin(t2), L1 + L2 * std::cos(t2))",
+        "std::atan2(y, x) - std::atan2(L2 * std::sin(t2), L1 + L2 * std::cos(t2))"], 3, "96.3 94.6",
+       ("C++도 `atan2(y, x)` 순서. `atan(y/x)`는 x < 0에서 180° 어긋납니다.",
+        "C++ is also `atan2(y, x)`. `atan(y/x)` is off by 180° when x < 0.")),
+    QB("cpp", ("int16 조립", "Assembling int16"),
+       "#include <cstdint>\n#include <cstdio>\nint main() {\n    uint8_t b[] = {0x18, 0xFC};   // little-endian int16\n"
+       "    int vel = ____;\n    std::printf(\"%d\\n\", vel);\n}",
+       ("부호 있는 속도로 읽는 코드는?", "Which reads a signed velocity?"),
+       ["b[0] | b[1] << 8", "(int16_t)(b[0] | b[1] << 8)", "(int16_t)(b[0] << 8 | b[1])", "(uint16_t)(b[0] | b[1] << 8)"],
+       1, "-1000",
+       ("하위 바이트가 먼저(리틀엔디언), 그리고 `int16_t`로 캐스팅해야 부호가 살아납니다.",
+        "Low byte first (little-endian), and cast to `int16_t` to keep the sign.")),
+    QB("cpp", ("최소 힙", "Min-heap"),
+       "#include <cstdio>\n#include <functional>\n#include <queue>\n#include <utility>\n#include <vector>\nint main() {\n"
+       "    std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int>>, ____> pq;\n"
+       "    pq.push({5, 1});\n    pq.push({2, 3});\n    pq.push({8, 0});\n"
+       "    std::printf(\"%d %d\\n\", pq.top().first, pq.top().second);\n}",
+       ("Dijkstra처럼 가장 짧은 거리가 top에 오게 하는 코드는?", "Which puts the shortest distance on top, as Dijkstra needs?"),
+       ["std::less<>", "std::greater<>", "std::less<std::pair<int, int>>", "std::greater<int>"], 1, "2 3",
+       ("`priority_queue`는 기본이 최대 힙. `std::greater<>`를 넣어야 최소 힙이 됩니다.",
+        "`priority_queue` is a max-heap by default; `std::greater<>` makes it a min-heap.")),
+    QL("cpp", ("시간 루프", "Time loop"),
+       "#include <cstdio>\nint main() {\n    double tf = 1.0, dt = 0.05;\n    int n = 0;\n"
+       "    for (double t = 0.0; t <= tf; t += dt) n++;\n    std::printf(\"%d\\n\", n);\n}",
+       ("t = 0 ~ tf(포함) 샘플 수 21 출력", "print 21 samples for t = 0 … tf inclusive"), [3, 4, 5, 6], 5,
+       "    for (int k = 0; k * dt <= tf + 1e-9; k++) n++;", "21",
+       ("0.05를 스무 번 더하면 1.0000000000000002가 되어 마지막 스텝이 빠집니다. 정수 k로 돌리세요.",
+        "Adding 0.05 twenty times gives 1.0000000000000002 and drops the last step. Loop on an integer k.")),
+    QL("cpp", ("입력 타입", "Input types"),
+       "#include <iostream>\n#include <sstream>\nint main() {\n    std::istringstream in(\"45.5 30\");\n    int deg;\n"
+       "    double len;\n    in >> deg >> len;\n    std::cout << deg + len << \"\\n\";\n}",
+       ("두 값 45.5와 30을 더해 75.5 출력", "add 45.5 and 30 and print 75.5"), [4, 5, 6, 7], 5, "    double deg;",
+       "75.5",
+       ("int로 읽으면 45에서 멈추고 '.5'가 다음 변수로 넘어갑니다. 소수가 올 수 있으면 double!",
+        "Reading an int stops at 45 and '.5' spills into the next variable. Use double when decimals may appear!")),
+    QB("cpp", ("cos 각도", "cos angle"),
+       "#include <cmath>\n#include <cstdio>\nint main() {\n    double d = 60;        // degrees\n    double c = ____;\n"
+       "    std::printf(\"%.3f\\n\", c);\n}",
+       ("cos 60° = 0.500을 구하는 코드는?", "Which computes cos 60° = 0.500?"),
+       ["std::cos(d)", "std::cos(d * 180.0 / M_PI)", "std::cos(d * M_PI / 180.0)", "std::acos(d * M_PI / 180.0)"], 2,
+       "0.500",
+       ("C++ `cos`도 라디안. 도 × π/180!", "C++ `cos` takes radians too: degrees × π/180!")),
+    QB("cpp", ("2차원 vector", "2-D vector"),
+       "#include <cstdio>\n#include <vector>\nint main() {\n    int R = 2, C = 3;\n    ____\n    g.at(1).at(2) = 9;\n"
+       "    std::printf(\"%zu %zu\\n\", g.size(), g[0].size());\n}",
+       ("R행 C열 격자를 만드는 코드는?", "Which builds an R-row, C-column grid?"),
+       ["std::vector<std::vector<int>> g(C, std::vector<int>(R, 0));",
+        "std::vector<std::vector<int>> g(R, std::vector<int>(C, 0));", "std::vector<std::vector<int>> g(R);",
+        "std::vector<std::vector<int>> g(R * C);"], 1, "2 3",
+       ("`vector(행 수, vector(열 수))`. 격자 파일을 읽을 때 R, C 순서를 지키세요.",
+        "`vector(rows, vector(cols))`. Keep the R, C order when reading grid files.")),
+]
+
+
+def _run_out(lang, code):
+    from . import judge
+    r = judge.program_output(lang, code, timeout=10)
+    return " ".join(r["out"].split()) if r and r["ok"] else None
+
+
+def check_quiz(p):
+    """코드형 퀴즈 검증 → (ok, 이유). blank: 정답 보기만 expect 출력. line: 그 줄을 고치면 동작이 바뀌고 expect 출력."""
+    from concurrent.futures import ThreadPoolExecutor
+    c, lang = p["check"], p["lang"]
+    expect = " ".join(c["expect"].split()) if c.get("expect") else None
+    if c["type"] == "blank":
+        if p["code"].count("____") != 1:
+            return False, "blank count"
+        with ThreadPoolExecutor(4) as ex:
+            outs = list(ex.map(lambda o: _run_out(lang, p["code"].replace("____", o)), p["options"]))
+        if outs[p["correct"]] is None or (expect is not None and outs[p["correct"]] != expect):
+            return False, f"correct option prints {outs[p['correct']]!r}"
+        good = outs[p["correct"]]
+        twins = [i for i, o in enumerate(outs) if i != p["correct"] and o == good]
+        return (False, f"options {twins} also print {good!r}") if twins else (True, "")
+    lines = p["code"].split("\n")
+    n = c["line"]
+    if not 1 <= n <= len(lines):
+        return False, "line out of range"
+    fixed = lines[:n - 1] + [c["fix"]] + lines[n:]
+    with ThreadPoolExecutor(2) as ex:
+        out_fix, out_bug = ex.map(lambda code: _run_out(lang, code), ["\n".join(fixed), p["code"]])
+    if out_fix is None or (expect is not None and out_fix != expect):
+        return False, f"fixed code prints {out_fix!r}"
+    if out_bug == out_fix:
+        return False, "bug line changes nothing"
+    return True, ""
 
 
 def K(lang, title, desc, answer, setup, tests, hint, explain):
@@ -468,129 +712,6 @@ def K(lang, title, desc, answer, setup, tests, hint, explain):
             "tests": list(tests), "answer": answer, "hint": hint, "accept": [], "explain": explain,
             "cpp_exec": lang == "cpp"}
 
-
-OUT = ("출력은?", "What is printed?")
-
-QUIZ = [
-    Q("python", ("atan2 vs atan", "atan2 vs atan"),
-      "import math\n\nx, y = -1.0, 1.0\na = math.degrees(math.atan2(y, x))\nb = math.degrees(math.atan(y / x))\n"
-      "print(round(a), round(b))", OUT, ["135 -45", "-45 -45", "135 135", "45 -45"], 0,
-      ("`atan(y/x)`는 x의 부호를 잃어 2사분면을 4사분면으로 착각합니다. IK에서는 무조건 `atan2(y, x)`!",
-       "`atan(y/x)` loses the sign of x and mistakes quadrant II for IV. In IK always use `atan2(y, x)`!")),
-    Q("python", ("도 vs 라디안", "Degrees vs radians"),
-      "import math\n\nprint(f\"{math.cos(90):.3f}\", f\"{math.cos(math.radians(90)):.3f}\")", OUT,
-      ["0.000 0.000", "-0.448 0.000", "0.000 -0.448", "-0.448 -0.448"], 1,
-      ("`math.cos(90)`은 90 '라디안'! 입력이 도라면 `math.radians` 먼저. FK 오답 1순위 실수입니다.",
-       "`math.cos(90)` means 90 *radians*! Convert degrees with `math.radians` first — the #1 FK mistake.")),
-    Q("python", ("반올림 함정", "Rounding traps"),
-      "print(round(2.5), round(3.5), f\"{2.675:.2f}\", round(0.5))", OUT,
-      ["3 4 2.68 1", "2 4 2.67 0", "2 4 2.68 0", "3 4 2.67 1"], 1,
-      ("`round`는 짝수 쪽으로(은행가 반올림), 2.675는 이진수로 2.67499…라 2.67. 출력 자리수는 f-문자열로만 맞추세요.",
-       "`round` goes to even (banker's rounding) and 2.675 is really 2.67499… in binary. Format output with f-strings only.")),
-    Q("python", ("split의 차이", "split() vs split(' ')"),
-      'line = "30  45\\n"\nprint(line.split(), line.strip().split(" "))', OUT,
-      ["['30', '45'] ['30', '45']", "['30', '45'] ['30', '', '45']", "['30', '', '45'] ['30', '45']",
-       "['30', '45\\n'] ['30', '', '45']"], 1,
-      ("인자 없는 `split()`은 연속 공백과 줄바꿈을 한 번에 처리, `split(' ')`은 빈 문자열이 생겨 `float('')`에서 터집니다.",
-       "`split()` with no argument collapses runs of whitespace; `split(' ')` leaves empty strings that crash `float('')`.")),
-    Q("python", ("arange의 끝점", "arange end point"),
-      "import numpy as np\n\nt = np.arange(0, 1.0, 0.25)\nprint(len(t), t[-1])", OUT,
-      ["5 1.0", "4 0.75", "4 1.0", "5 0.75"], 1,
-      ("`np.arange(a, b, dt)`는 b를 포함하지 않습니다. 궤적은 tf까지 써야 하니 `linspace`나 정수 k·dt 루프로!",
-       "`np.arange(a, b, dt)` excludes b. Trajectories must include tf — use `linspace` or an integer k·dt loop!")),
-    Q("python", ("-0.000", "-0.000"),
-      "import math\n\nx = 0.5 * math.cos(math.radians(90)) - 0.5 * math.cos(math.radians(90)) - 1e-17\n"
-      "print(f\"{x:.3f}\", f\"{abs(x):.3f}\")", OUT,
-      ["0.000 0.000", "-0.000 0.000", "-0.000 -0.000", "0.000 -0.000"], 1,
-      ("아주 작은 음수는 `-0.000`으로 찍힙니다. 시험 채점에서 문제될 수 있으니 출력 전에 확인하세요.",
-       "Tiny negatives print as `-0.000`. Watch for it before writing graded output.")),
-    Q("python", ("부호 있는 바이트", "Signed bytes"),
-      'raw = bytes.fromhex("18FC")\nprint(int.from_bytes(raw, "little"), int.from_bytes(raw, "little", signed=True))',
-      OUT, ["64536 -1000", "6396 -1000", "-1000 64536", "64536 64536"], 0,
-      ("리틀엔디언 18 FC → 0xFC18 = 64536. 속도·위치처럼 음수가 될 수 있는 값은 `signed=True` 필수!",
-       "Little-endian 18 FC → 0xFC18 = 64536. Velocities and positions can be negative — `signed=True` is mandatory!")),
-    Q("python", ("heapq 순서", "heapq order"),
-      'import heapq\n\npq = []\nfor item in [(5, "B"), (2, "C"), (2, "A"), (9, "D")]:\n    heapq.heappush(pq, item)\n'
-      "print(heapq.heappop(pq), heapq.heappop(pq))", OUT,
-      ["(2, 'C') (2, 'A')", "(2, 'A') (2, 'C')", "(9, 'D') (5, 'B')", "(5, 'B') (2, 'C')"], 1,
-      ("`heapq`는 최소 힙, 튜플은 첫 값부터 비교하고 같으면 다음 값. 그래서 Dijkstra는 (거리, 노드) 순서로 넣습니다.",
-       "`heapq` is a min-heap and tuples compare element by element — that is why Dijkstra pushes (dist, node).")),
-    Q("python", ("인코딩 바이트 수", "Encoding byte counts"),
-      'name = "로봇"\nprint(len(name), len(name.encode("utf-8")), len(name.encode("cp949")))', OUT,
-      ["2 6 4", "2 4 6", "6 6 4", "2 2 2"], 0,
-      ("한글은 UTF-8에서 3바이트, CP949에서 2바이트. 엑셀로 열 CSV는 `utf-8-sig`로 써야 안 깨집니다.",
-       "Hangul is 3 bytes in UTF-8 and 2 in CP949. CSVs meant for Excel should be written as `utf-8-sig`.")),
-    Q("python", ("arccos 도메인", "arccos domain"),
-      "import numpy as np\n\nD = 1.0000001\nprint(np.isnan(np.arccos(D)), np.arccos(np.clip(D, -1, 1)))", OUT,
-      ["False 0.0", "True 0.0", "True nan", "ValueError"], 1,
-      ("부동소수 오차로 D가 1을 살짝 넘으면 `arccos`는 nan. IK에서는 `np.clip(D, -1, 1)`로 감싸세요 (도달 불가 판정은 먼저!).",
-       "Float error can push D just above 1 and `arccos` returns nan. Wrap it in `np.clip(D, -1, 1)` (after the reachability check!).")),
-    Q("python", ("격자 인덱스", "Grid indexing"),
-      "grid = [[0] * 3 for _ in range(2)]\ngrid[1][2] = 9\nprint(len(grid), len(grid[0]), grid[1])", OUT,
-      ["2 3 [0, 0, 9]", "3 2 [0, 9]", "2 3 [9, 0, 0]", "3 2 [0, 0, 9]"], 0,
-      ("`grid[행][열]`: len(grid)가 행 수, len(grid[0])이 열 수. 그림 좌표 (x, y)는 (열, 행)이라 뒤집힙니다!",
-       "`grid[row][col]`: len(grid) is the row count, len(grid[0]) the column count. Plot (x, y) is (col, row)!")),
-    Q("python", ("CUBIC 계수", "Cubic coefficients"),
-      "q0, qf, tf = 0.0, 90.0, 3.0\na2 = 3 * (qf - q0) / tf ** 2\na3 = -2 * (qf - q0) / tf ** 3\nt = 1.0\n"
-      "print(f\"{q0 + a2 * t**2 + a3 * t**3:.3f}\")", OUT, ["30.000", "23.333", "45.000", "26.667"], 1,
-      ("a2 = 30, a3 = −6.667 → q(1) = 30 − 6.667 = 23.333. 3차 궤적은 처음엔 천천히 출발합니다 (선형이면 30).",
-       "a2 = 30, a3 = −6.667 → q(1) = 30 − 6.667 = 23.333. A cubic starts slowly (linear would give 30).")),
-    Q("cpp", ("정수 나눗셈", "Integer division"),
-      "#include <iostream>\nint main() {\n    double a = 4.0, t = 2.0;\n    double q1 = 1 / 2 * a * t * t;\n"
-      "    double q2 = 0.5 * a * t * t;\n    std::cout << q1 << \" \" << q2 << \"\\n\";\n}", OUT,
-      ["8 8", "0 8", "4 8", "0 0"], 1,
-      ("`1 / 2`는 int끼리라 0! 궤적 공식 ½·a·t²에서 가장 흔한 C++ 실수입니다. `0.5` 또는 `1.0 / 2`로.",
-       "`1 / 2` is integer division = 0! The classic C++ bug in ½·a·t². Write `0.5` or `1.0 / 2`.")),
-    Q("cpp", ("출력 자리수", "Output precision"),
-      "#include <iomanip>\n#include <iostream>\nint main() {\n    std::cout << 2.0 / 3 << \" \" << 1.0 << \" \";\n"
-      "    std::cout << std::fixed << std::setprecision(3) << 2.0 / 3 << \" \" << 1.0 << \"\\n\";\n}", OUT,
-      ["0.667 1 0.667 1.000", "0.666667 1 0.667 1.000", "0.666667 1.0 0.667 1.000", "0.667 1.000 0.667 1.000"], 1,
-      ("기본 cout은 유효숫자 6자리에 1.0을 1로 찍습니다. 시험 형식은 `std::fixed << std::setprecision(n)` 또는 `printf(\"%.3f\")`!",
-       "Plain cout uses 6 significant digits and prints 1.0 as 1. Use `std::fixed << std::setprecision(n)` or `printf(\"%.3f\")`!")),
-    Q("cpp", ("cos(90)", "cos(90)"),
-      "#include <cmath>\n#include <cstdio>\nint main() {\n"
-      "    std::printf(\"%.3f %.3f\\n\", std::cos(90.0), std::cos(90.0 * M_PI / 180.0));\n}", OUT,
-      ["0.000 0.000", "-0.448 0.000", "-0.448 -0.000", "0.000 -0.448"], 1,
-      ("C++ `cos`도 라디안! `deg * M_PI / 180.0`으로 바꿔 넣으세요. (`M_PI`는 <cmath>의 GNU 확장)",
-       "C++ `cos` takes radians too! Convert with `deg * M_PI / 180.0` (`M_PI` is a GNU extension in <cmath>).")),
-    Q("cpp", ("int16 조립", "Assembling int16"),
-      "#include <cstdint>\n#include <iostream>\nint main() {\n    uint8_t lo = 0x18, hi = 0xFC;\n"
-      "    int a = lo | hi << 8;\n    int16_t b = (int16_t)(lo | hi << 8);\n    std::cout << a << \" \" << b << \"\\n\";\n}",
-      OUT, ["64536 -1000", "-1000 -1000", "64536 64536", "6396 -1000"], 0,
-      ("int로 받으면 부호가 사라져 64536. `int16_t`로 캐스팅해야 -1000이 됩니다. CAN 파싱 단골 함정!",
-       "Stored in an int the sign is lost (64536); cast to `int16_t` to get -1000. A CAN parsing classic!")),
-    Q("cpp", ("priority_queue 방향", "priority_queue direction"),
-      "#include <functional>\n#include <iostream>\n#include <queue>\n#include <vector>\nint main() {\n"
-      "    std::priority_queue<int> a;\n    std::priority_queue<int, std::vector<int>, std::greater<int>> b;\n"
-      "    for (int x : {5, 2, 8}) { a.push(x); b.push(x); }\n    std::cout << a.top() << \" \" << b.top() << \"\\n\";\n}",
-      OUT, ["2 8", "8 2", "8 8", "2 2"], 1,
-      ("C++ `priority_queue`는 기본이 최대 힙! Dijkstra·A*에는 `std::greater<>`를 넣어 최소 힙으로 바꿔야 합니다.",
-       "C++ `priority_queue` is a max-heap by default! Dijkstra/A* need `std::greater<>` for a min-heap.")),
-    Q("cpp", ("float 누적 루프", "Accumulating float loop"),
-      "#include <iostream>\nint main() {\n    int n = 0;\n    for (double t = 0.0; t <= 1.0; t += 0.05) n++;\n"
-      "    int m = 0;\n    for (int k = 0; k <= 20; k++) m++;\n    std::cout << n << \" \" << m << \"\\n\";\n}", OUT,
-      ["21 21", "20 21", "21 20", "20 20"], 1,
-      ("0.05를 스무 번 더하면 1.0000000000000002가 되어 t = 1.0 스텝이 빠집니다. 시간 루프는 정수 k로 돌리고 t = k·dt!",
-       "Adding 0.05 twenty times gives 1.0000000000000002, so the t = 1.0 step is lost. Loop on an integer k and use t = k·dt!")),
-    Q("cpp", ("스트림 읽기 타입", "Stream extraction types"),
-      "#include <iostream>\n#include <sstream>\nint main() {\n    std::istringstream in(\"45.5 30\");\n    int a;\n"
-      "    double b;\n    in >> a >> b;\n    std::cout << a << \" \" << b << \"\\n\";\n}", OUT,
-      ["45.5 30", "45 0.5", "45 30", "0 0"], 1,
-      ("int로 읽으면 '45'에서 멈추고 남은 '.5'가 다음 double로 들어갑니다. 소수가 섞일 수 있으면 전부 double로 읽으세요.",
-       "Reading an int stops at '45' and the leftover '.5' goes into the next double. Read everything as double when decimals may appear.")),
-    Q("cpp", ("반올림과 캐스팅", "Rounding vs casting"),
-      "#include <cmath>\n#include <iostream>\nint main() {\n"
-      "    std::cout << std::round(2.5) << \" \" << (int)2.7 << \" \" << (int)-2.7 << \" \" << std::lround(-2.5) << \"\\n\";\n}",
-      OUT, ["2 3 -3 -2", "3 2 -2 -3", "3 3 -3 -3", "2 2 -2 -2"], 1,
-      ("C++ `round`는 0에서 먼 쪽(2.5→3, −2.5→−3), `(int)` 캐스팅은 0 쪽으로 버림. Python `round`(짝수 쪽)와 다릅니다!",
-       "C++ `round` goes away from zero (2.5→3, −2.5→−3) and `(int)` truncates toward zero — unlike Python's round-half-even!")),
-    Q("cpp", ("2차원 vector", "2-D vector"),
-      "#include <iostream>\n#include <vector>\nint main() {\n    std::vector<std::vector<int>> g(2, std::vector<int>(3, 0));\n"
-      "    g[1][2] = 9;\n    std::cout << g.size() << \" \" << g[0].size() << \" \" << g[1][2] + g[0][2] << \"\\n\";\n}",
-      OUT, ["2 3 9", "3 2 9", "2 3 18", "3 2 0"], 0,
-      ("`vector(행 수, vector(열 수))` — g.size()가 행, g[0].size()가 열. 격자 입력을 읽을 때 R, C 순서를 지키세요.",
-       "`vector(rows, vector(cols))` — g.size() is rows and g[0].size() is cols. Keep the R, C order when reading grids.")),
-]
 
 KATA = [
     K("python", ("FK — 말단 x", "FK — end-effector x"),

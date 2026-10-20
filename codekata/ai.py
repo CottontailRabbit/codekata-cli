@@ -4,6 +4,7 @@ Claude 구독 로그인은 외부 앱에서 쓸 수 없어서, 이미 로그인�
 """
 import json
 import random
+import re
 import shutil
 import subprocess
 import tempfile
@@ -93,12 +94,16 @@ EXAM_TOPICS = ("로봇소프트웨어개발기사 실기(작업형, 언어 Pytho
                "최소/최대 힙 방향, 격자 [행][열].")
 
 EXAM_SPEC = {
-    "quiz": """위 실기 범위의 공식·함수·형식 함정을 묻는 4지선다 퀴즈.
-- code: 그대로 실행 가능한 완전한 프로그램 5~15줄 (Python은 math/numpy만, C++은 표준 라이브러리만, 파일 입출력 없이)
-- question: 대부분 출력 예측("출력은?"), 가끔 공식/개념 선택
-- options: 서로 다른 보기 4개, 출력 예측이면 실제 출력 그대로(줄바꿈은 공백으로)
-- correct: 정답 인덱스 0~3, 문제마다 위치를 섞을 것
-- desc/setup/hint/answer: 빈 문자열, tests/accept: 빈 배열""",
+    "quiz": """위 실기 범위의 함정을 '코드'로 묻는 4지선다 퀴즈. 숫자를 계산해서 맞히는 출력 예측 문제는 금지.
+두 유형 중 하나만 (섞어서 출제):
+(A) 빈칸형: code에 ____ 를 정확히 한 곳(한 줄 안의 식이나 문장). options = 빈칸에 들어갈 코드 4개
+    (정답 1개 + 실기 단골 실수 3개: 도/라디안, atan, int 나눗셈, 인덱스 순서, signed 누락 등).
+    answer = 정답 코드를 넣고 실행했을 때의 표준출력 그대로. question = 의도가 드러나는 한 문장.
+(B) 버그 줄형: code = 버그가 정확히 한 줄 있는 완전한 프로그램. options = "N번 줄"(영어면 "line N") 4개,
+    correct = 버그 줄 보기 인덱스, answer = 그 줄을 고친 코드 한 줄(들여쓰기 포함),
+    question = "의도: <프로그램이 해야 할 일> — 버그가 있는 줄은?"
+- code: 그대로 실행 가능한 5~15줄, 파일 입출력 없이, Python은 math만, C++은 표준 라이브러리만, 결과는 print/printf로 출력
+- desc/setup/hint: 빈 문자열, tests/accept: 빈 배열""",
     "kata": """위 실기 범위의 공식 한 줄을 쓰는 카타.
 - desc: 무엇을 계산할지 (변수명·단위 명시). 정답을 그대로 쓰지 말 것
 - setup: {setup_rule}
@@ -233,6 +238,8 @@ def validate(p):
         opts = p["options"]
         if len(opts) != 4 or len(set(opts)) != 4 or not (0 <= p["correct"] < 4) or not p["code"]:
             return False, "quiz shape"
+        if p.get("track") == "exam":
+            return _validate_exam_quiz(p)
         if p["lang"] in ("python", "js", "cpp") and ("출력" in p["question"] or "output" in p["question"].lower()
                                                       or "print" in p["question"].lower()):
             r = judge.program_output(p["lang"], p["code"])
@@ -246,6 +253,26 @@ def validate(p):
                     return False, f"quiz output mismatch: {out[:60]}"
         return True, ""
     return False, "kind"
+
+
+def _validate_exam_quiz(p):
+    """실기 퀴즈는 빈칸형/버그 줄형만. 보기를 하나씩 넣어 실행해 정답이 하나로 갈리는지 확인한다."""
+    if "____" in p["code"]:
+        p["check"] = {"type": "blank", "expect": p["answer"]}
+        p["opt_code"] = True
+    else:
+        nums = [re.search(r"\d+", o) for o in p["options"]]
+        if not all(nums):
+            return False, "exam quiz type"
+        n = int(nums[p["correct"]].group())
+        lines = p["code"].split("\n")
+        if not 1 <= n <= len(lines):
+            return False, "bug line out of range"
+        fix = p["answer"].rstrip("\n")
+        if fix and not fix[:1].isspace():
+            fix = lines[n - 1][:len(lines[n - 1]) - len(lines[n - 1].lstrip())] + fix
+        p["check"] = {"type": "line", "line": n, "fix": fix, "expect": None}
+    return exam.check_quiz(p)
 
 
 class ProblemSource:
@@ -272,7 +299,7 @@ class ProblemSource:
     def warm(self, kinds, langs, track="code"):
         with self.cv:
             for k in kinds:
-                if k == "task":                     # 실전 작업형은 문제은행 + 레퍼런스 풀이로만 출제
+                if k in ("task", "clone"):          # 실전 작업형·클론코딩은 문제은행 + 레퍼런스 풀이로만 출제
                     continue
                 for lang in langs:
                     self.wanted.add((k, lang, track))
@@ -291,8 +318,8 @@ class ProblemSource:
         return self.history["seen"].setdefault(lang, [])
 
     def next(self, kind, lang, track="code"):
-        if kind == "task":
-            p = self._exam_task(lang)
+        if kind in ("task", "clone"):
+            p = self._exam_task(lang, clone=kind == "clone")
             self.stats["served_bank"] += 1
             return p
         key = (kind, lang, track)
@@ -314,7 +341,7 @@ class ProblemSource:
         self._seen(lang).append(p.get("title_ko") or p["title"])
         return p
 
-    def _exam_task(self, lang):
+    def _exam_task(self, lang, clone=False):
         tid = self.task_pick
         if not tid:
             seen = self.history["seen"].setdefault("exam-task", [])
@@ -324,7 +351,7 @@ class ProblemSource:
             tid = random.choice(fresh)
             seen.append(tid)
         self._bank_used.add(tid)
-        return exam.make_task(tid, lang, seed=random.randrange(1 << 30))
+        return (exam.make_clone if clone else exam.make_task)(tid, lang, seed=random.randrange(1 << 30))
 
     def _from_bank(self, kind, lang, track="code"):
         import copy

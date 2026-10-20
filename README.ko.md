@@ -96,18 +96,20 @@ FLAWLESS(노미스·노힌트·하트 3개 클리어 +3,000). 등급 SS / S / A 
 를 Python / C++로 연습하는 모드입니다. 이 브랜치로 설치: `pipx install "git+https://github.com/CottontailRabbit/codekata-cli.git@exam"`
 
 ```bash
-codekata exam                      # 랭크전 5스테이지: 퀴즈 → 카타 → 퀴즈 → 카타 → 실전 작업형(보스)
+codekata exam                      # 랭크전 5스테이지: 퀴즈 → 카타 → 클론코딩 → 퀴즈 → 실전 작업형(보스)
 codekata exam -l cpp               # C++로
 codekata exam task                 # 실전 작업형만 (기본 2문제)
 codekata exam task -t ik2 -l cpp   # 특정 문제 고정
-codekata exam quiz | kata          # 공식·함정 퀴즈 / 공식 한 줄 카타만
+codekata exam clone -t grid -l cpp # 모범답안 줄별 클론코딩
+codekata exam quiz | kata          # 코드형 퀴즈 / 공식 한 줄 카타만
 codekata exam list                 # 실전 문제 목록
 ```
 메뉴에서는 `5`번(←→로 고른 언어가 python/cpp면 그 언어, 아니면 Python).
 
 | 스테이지 | 내용 | 채점 |
 |---|---|---|
-| **퀴즈** | 도/라디안, `atan2` 인자 순서, `arange` 끝점, int 나눗셈, `round` 규칙, `-0.000`, signed 바이트, 힙 방향, 격자 `[행][열]`, 인코딩 바이트 수, C++ `fixed`/`setprecision` … | 보기의 정답은 전부 실제 실행 결과로 검증 |
+| **퀴즈** | 숫자 계산 없이 **코드를 묻는** 두 유형: 빈칸 `____`에 들어갈 코드 / 버그가 있는 줄 번호. 주제는 도/라디안, `atan2`, tf 포함 시간축, int 나눗셈, 출력 형식, signed 바이트, 힙 방향, 격자 `[행][열]`, `utf-8-sig`, C++ `fixed`/`setprecision` … | 보기를 하나씩 넣어 실제 실행 → 정답 보기만 의도한 출력을 내는지 검증 (AI 문제도 동일, 애매하면 폐기) |
+| **클론코딩** | 실전 문제 모범답안을 **한 줄씩 따라 치기**(들여쓰기·주석 자동). 다 치면 친 코드를 새 입력으로 실제 실행해 채점 | 줄 단위 일치 + 실행 결과 |
 | **카타** | FK/IK·CUBIC·LSPB·BBPB·PID·옥타일 휴리스틱 등 공식 한 줄 | Python은 실행, **C++은 g++로 컴파일·실행**해서 숨은 테스트까지 비교 |
 | **실전 작업형** | 작업 폴더에 `input.txt` 생성 → `e`로 에디터(`$CODEKATA_EDITOR`/`$VISUAL`/`$EDITOR`/nano/vim)에서 `solution.py`/`.cpp` 작성 → `r`로 실행·채점 | 레퍼런스 풀이 출력과 **줄 단위 비교**. 값 오류와 형식 오류(자리수·구분자)를 따로 표시, 마지막 자리 ±1은 반올림 경계로 인정 |
 

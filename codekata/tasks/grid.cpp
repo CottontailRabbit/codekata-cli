@@ -37,7 +37,8 @@ int main() {
         for (int dr = -1; dr <= 1; ++dr)
             for (int dc = -1; dc <= 1; ++dc) {
                 int nr = r + dr, nc = c + dc;
-                if ((!dr && !dc) || nr < 0 || nr >= R || nc < 0 || nc >= C || grid[nr][nc]) continue;
+                if (!dr && !dc) continue;
+                if (nr < 0 || nr >= R || nc < 0 || nc >= C || grid[nr][nc]) continue;
                 if (dr && dc && (grid[r][nc] || grid[nr][c])) continue;
                 double nd = d + (dr && dc ? SQ2 : 1.0);
                 if (nd < g[nr][nc]) {

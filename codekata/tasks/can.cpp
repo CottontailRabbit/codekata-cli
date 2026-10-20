@@ -17,7 +17,8 @@ int main() {
             b[i] = (uint8_t)std::stoi(h, nullptr, 16);
         }
         int node = std::stoi(id, nullptr, 16) - 0x180;
-        int32_t pos = (int32_t)((uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24);
+        uint32_t raw = b[0] | b[1] << 8 | b[2] << 16 | (uint32_t)b[3] << 24;
+        int32_t pos = (int32_t)raw;
         int16_t vel = (int16_t)(b[4] | b[5] << 8);
         std::fprintf(out, "%d,%.2f,%d,%d,%d\n", node, pos * 0.01, vel, b[6], b[7] & 1);
     }

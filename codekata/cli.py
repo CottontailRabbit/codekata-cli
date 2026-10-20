@@ -382,8 +382,8 @@ def menu(cfg, opts):
                          ("2", tr("⌨  타자 러시", "⌨  Type Rush"), tr("코드 따라치기 · WPM", "type the code · WPM")),
                          ("3", tr("✎  카타", "✎  Kata"), tr("1~2줄 코드 작성 · 실행 채점", "write 1–2 lines · executed & judged")),
                          ("4", tr("?  퀴즈", "?  Quiz"), tr("코드 읽기 4지선다", "read code · 4 choices")),
-                         ("5", tr("⚙  실기", "⚙  Exam"), tr("로봇SW개발기사 실기 · 퀴즈→카타→실전 작업형 (Python/C++)",
-                                                          "Robot SW engineer practical · quiz → kata → real task (Python/C++)"))]
+                         ("5", tr("⚙  실기", "⚙  Exam"), tr("로봇SW개발기사 실기 · 퀴즈→카타→클론코딩→퀴즈→실전 (Python/C++)",
+                                                          "Robot SW practical · quiz → kata → clone → quiz → task (Python/C++)"))]
                 for k, name, desc in items:
                     L.append(fx.c(f" {k} ", fx.BLACK, bg=fx.GOLD, bold=True) + " " + fx.c(fx.pad(name, 14), fx.WHITE, bold=True)
                              + fx.c(desc, fx.GREY))
@@ -553,7 +553,7 @@ def build_parser():
         q.add_argument("-l", "--lang", default=None)
         q.add_argument("-n", "--stages", type=int, default=None)
     ex = sub.add_parser("exam", help=tr("로봇SW개발기사 실기 대비 (Python/C++)", "Robot SW engineer practical exam prep (Python/C++)"))
-    ex.add_argument("kind", nargs="?", choices=["mix", "quiz", "kata", "task", "list"], default="mix",
+    ex.add_argument("kind", nargs="?", choices=["mix", "quiz", "kata", "clone", "task", "list"], default="mix",
                     help=tr(f"mix = 랭크전({exam.EXAM_STAGES}스테이지), list = 실전 문제 목록",
                             f"mix = ranked ({exam.EXAM_STAGES} stages), list = list the real tasks"))
     ex.add_argument("-l", "--lang", choices=list(exam.EXAM_LANGS), default=None)
@@ -626,7 +626,8 @@ def main(argv=None):
             return
         lang = args.lang or (cfg.get("lang") if cfg.get("lang") in exam.EXAM_LANGS else "python")
         mode = "exam" if args.kind == "mix" else f"exam-{args.kind}"
-        default_n = {"exam": exam.EXAM_STAGES, "exam-task": 1 if args.task else 2}.get(mode, store.RANKED_STAGES)
+        default_n = {"exam": exam.EXAM_STAGES, "exam-task": 1 if args.task else 2,
+                     "exam-clone": 1 if args.task else 2}.get(mode, store.RANKED_STAGES)
         play(cfg, opts, mode, [lang], args.stages or default_n, task=args.task)
     elif args.cmd == "stats":
         emit(stats_lines(store.load_history()))

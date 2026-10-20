@@ -106,17 +106,19 @@ exam — **read a TXT input file, compute robot formulas, write the result file 
 Python or C++. Install this branch with `pipx install "git+https://github.com/CottontailRabbit/codekata-cli.git@exam"`.
 
 ```bash
-codekata exam                      # ranked, 5 stages: quiz → kata → quiz → kata → real task (boss)
+codekata exam                      # ranked, 5 stages: quiz → kata → clone → quiz → real task (boss)
 codekata exam -l cpp
 codekata exam task                 # real tasks only (2 by default)
 codekata exam task -t ik2 -l cpp   # pin one task
+codekata exam clone -t grid -l cpp # line-by-line clone coding of a model answer
 codekata exam quiz | kata
 codekata exam list
 ```
 
 | stage | what | judging |
 |---|---|---|
-| **quiz** | degrees vs radians, `atan2` argument order, `arange` end point, integer division, rounding rules, `-0.000`, signed bytes, heap direction, `grid[row][col]`, encodings, C++ `fixed`/`setprecision` … | every answer verified by running the code |
+| **quiz** | asks about **code**, not arithmetic: which snippet fills the blank `____`, or which line is the bug. Degrees vs radians, `atan2`, inclusive time axes, integer division, output format, signed bytes, heap direction, `grid[row][col]`, `utf-8-sig`, C++ `fixed`/`setprecision` … | each option is substituted and run; only the right one may produce the intended output (AI quizzes too — ambiguous ones are dropped) |
+| **clone** | retype a task's model answer **line by line** (indent and comments are automatic); the typed code is then run on fresh input and graded | per-line match + real run |
 | **kata** | one-line formulas: FK/IK, cubic/LSPB/BBPB, PID, octile heuristic … | Python executed; **C++ compiled with g++ and run** against hidden tests |
 | **real task** | `input.txt` is created in a work folder → `e` opens your editor (`$CODEKATA_EDITOR`/`$VISUAL`/`$EDITOR`/nano/vim) on `solution.py`/`.cpp` → `r` runs and grades | line-by-line diff against the reference output; value errors and format errors (decimals, separators) reported separately; ±1 in the last digit accepted |
 

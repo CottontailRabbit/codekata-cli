@@ -25,9 +25,11 @@ EXAM_BOSSES = [(("특이점 골렘", "Singularity Golem"), fx.RED), (("짐벌락
                (("적분 와인드업 키메라", "Integral-Windup Chimera"), fx.CYAN), (("-0.000 망령", "The -0.000 Wraith"), 202)]
 MODES = {"mix": ("믹스", "Mix"), "rush": ("타자 러시", "Type Rush"), "kata": ("카타", "Kata"), "quiz": ("퀴즈", "Quiz"),
          "exam": ("실기 랭크전", "Exam ranked"), "exam-quiz": ("실기 퀴즈", "Exam quiz"),
-         "exam-kata": ("실기 카타", "Exam kata"), "exam-task": ("실기 작업형", "Exam task")}
+         "exam-kata": ("실기 카타", "Exam kata"), "exam-task": ("실기 작업형", "Exam task"),
+         "exam-clone": ("실기 클론코딩", "Exam clone coding")}
 KIND_ICON = {"rush": (("⌨ 타자 러시", "⌨ TYPE RUSH"), fx.CYAN), "kata": (("✎ 카타", "✎ KATA"), fx.LIME),
-             "quiz": (("? 퀴즈", "? QUIZ"), fx.PINK), "task": (("⚙ 실전 작업형", "⚙ EXAM TASK"), fx.ORANGE)}
+             "quiz": (("? 퀴즈", "? QUIZ"), fx.PINK), "task": (("⚙ 실전 작업형", "⚙ EXAM TASK"), fx.ORANGE),
+             "clone": (("⧉ 줄별 클론코딩", "⧉ LINE-BY-LINE CLONE"), fx.SKY)}
 
 
 def mode_label(mode):
@@ -65,6 +67,8 @@ def highlight(line, lang):
             return fx.c(t, fx.DIM)
         if m.group("num"):
             return fx.c(t, 141)
+        if m.group("word") and len(t) >= 4 and set(t) == {"_"}:          # 퀴즈 빈칸
+            return fx.c(t, fx.BLACK, bg=fx.YELLOW, bold=True)
         if m.group("word") and t in kws:
             return fx.c(t, 205, bold=True)
         return fx.c(t, 253)
@@ -616,7 +620,7 @@ class Game:
             out += [""] + [fx.c(x, fx.WHITE, bold=True) for x in wrap(p["question"], w)] + [""]
             for i, o in enumerate(opts):
                 key = fx.c(f" {i + 1} ", fx.BLACK, bg=fx.PINK, bold=True)
-                text = fx.c(o, 253)
+                text = highlight(o, p["lang"]) if p.get("opt_code") else fx.c(o, 253)
                 if chosen is not None and i == chosen and not reveal:
                     key = fx.c(f" {i + 1} ", fx.BLACK, bg=fx.YELLOW, bold=True)
                     text = fx.c(o, fx.YELLOW, bold=True)
@@ -835,6 +839,141 @@ class Game:
             self.render()
             self.say("c", caster.say("miss", boss=self.boss), tw=False)
 
+    # ─── 스테이지: 줄별 클론코딩 ──────────────────────────
+
+    def stage_clone(self, p):
+        rows = exam.clone_lines(p["code"])
+        todo = [i for i, r in enumerate(rows) if r[2] is not None]
+        typed = {}
+        cur_i, buf = 0, ""
+        typos = wrong = streak = 0
+        t0 = None
+        cols, _ = fx.size()
+        w = max(40, min(cols - 8, 100))
+
+        def view():
+            icon, col = kind_icon("clone")
+            out = [fx.c(icon, col, bold=True) + "  " + fx.c(p["title"], fx.WHITE, bold=True) +
+                   fx.c(f"   [{p['topic']}]", fx.DARK),
+                   fx.c(tr("모범답안을 한 줄씩 따라 치세요. 들여쓰기·주석은 자동 · Enter 줄 제출 · ESC 포기",
+                           "Retype the model answer line by line. Indent & comments are automatic · Enter submits a line · ESC quits"),
+                        fx.DIM), ""]
+            cur = todo[cur_i] if cur_i < len(todo) else len(rows)
+            lo = max(0, min(cur - 6, len(rows) - 15))
+            for i in range(lo, min(len(rows), lo + 15)):
+                raw, indent, target = rows[i]
+                num = fx.c(f"{i + 1:>3} ", fx.DARK)
+                if target is None:
+                    out.append(num + fx.c("  " + raw, 240))
+                elif i in typed:
+                    out.append(num + fx.c("✔ ", fx.LIME) + fx.c(indent + typed[i], fx.LIME))
+                elif i == cur:
+                    out.append(num + fx.c("▶ ", fx.YELLOW, bold=True) + fx.c(indent, fx.DARK) +
+                               fx.c(target, fx.BLACK, bg=fx.YELLOW, bold=True))
+                else:
+                    out.append(num + "  " + highlight(raw, p["lang"]))
+            if cur < len(rows):
+                target = rows[cur][2]
+                good = 0
+                while good < len(buf) and good < len(target) and buf[good] == target[good]:
+                    good += 1
+                shown = fx.c(buf[:good], fx.LIME, bold=True) + fx.c(buf[good:], fx.WHITE, bg=fx.RED, bold=True)
+                out += ["", fx.c("❯ ", fx.SKY, bold=True) + fx.c(rows[cur][1].replace(" ", "·"), fx.DARK) + shown +
+                        fx.c("▏", fx.SKY)]
+            el = (time.monotonic() - t0) if t0 else 0.0
+            done = len(typed)
+            out += ["", fx.bar(done / max(1, len(todo)), 30, fx.SKY, ch_full="■", ch_empty="·") +
+                    fx.c(f"  {done}/{len(todo)} " + tr("줄", "lines"), fx.WHITE, bold=True) +
+                    fx.c(f"   TIME {el:5.1f}s   " + tr("오타", "typos") + f" {typos}   " + tr("오답 줄", "wrong lines") +
+                         f" {wrong}   STREAK {streak}", fx.DIM)]
+            return out
+
+        self.prompt = ""
+        LOG.ev("clone_open", tid=p["tid"], lang=p["lang"], lines=len(todo))
+        while cur_i < len(todo):
+            self.body = view()
+            self.render()
+            k = self.keys.get(0.5 if t0 else None)
+            if k is None:
+                continue
+            if t0 is None:
+                t0 = time.monotonic()
+            target = rows[todo[cur_i]][2]
+            if k == "ESC":
+                self.say("c", caster.say("skip"))
+                self.miss(lose_heart=False, reason="clone_skip")
+                return {"ok": False, "skipped": True, "lines": len(typed)}
+            if k == "BACKSPACE":
+                buf = buf[:-1]
+                continue
+            if k == "CTRL_U":
+                buf = ""
+                continue
+            if k == "CTRL_W":
+                buf = buf.rstrip()
+                buf = buf[:max(buf.rfind(" "), buf.rfind("("), buf.rfind("."), -1) + 1]
+                continue
+            if k == "ENTER":
+                if exam.same_line(buf, target):
+                    typed[todo[cur_i]] = target
+                    cur_i, buf = cur_i + 1, ""
+                    streak += 1
+                    chip = 4 * len(target) // 10 + 4
+                    self.boss_hp -= chip
+                    self.disp_hp = max(0, self.boss_hp)
+                    self.score += chip
+                    if streak in (5, 10, 20):
+                        self.snd.play("streak")
+                        self.body = view()
+                        self.say("c", caster.say("streak", n=streak), tw=False)
+                    else:
+                        self.snd.play("select")
+                else:
+                    wrong += 1
+                    self.slips += 1
+                    if streak >= 5:
+                        self.say("c", caster.say("streak_break", n=streak), tw=False)
+                    streak = 0
+                    self.snd.play("typo")
+                    fx.shake(2, 5)
+                continue
+            if len(k) == 1:
+                ok_before = target.startswith(buf)
+                buf += k
+                if ok_before and not target.startswith(buf):
+                    typos += 1
+                    self.snd.play("typo")
+                else:
+                    self.snd.play("key")
+        sec = time.monotonic() - (t0 or time.monotonic())
+        chars = sum(len(rows[i][2]) for i in todo)
+        wpm = (chars / 5) / max(sec / 60, 1e-6)
+        # 친 코드를 실제로 돌려 본다: 작업 폴더에 저장 → 실행 → 기대 출력과 비교
+        src_text = "\n".join(r[1] + typed[i] if r[2] is not None else r[0] for i, r in enumerate(rows)) + "\n"
+        ws, src = exam.workspace(self.sid, p)
+        src.write_text(src_text, encoding="utf-8")
+        p["_ws"] = str(ws)
+        self.prompt = fx.c(tr("⚙ 친 코드를 실제로 실행 중...", "⚙ running the code you typed..."), fx.YELLOW, bold=True)
+        self.render()
+        res = exam.run_solution(ws, p["lang"])
+        ratio = exam.grade(p["expected"], res["out"])[0] if res["ok"] else 0.0
+        self.prompt = ""
+        LOG.ev("clone_done", tid=p["tid"], lang=p["lang"], secs=round(sec, 1), wpm=round(wpm, 1), typos=typos,
+               wrong=wrong, run_ok=res["ok"], ratio=round(ratio, 3))
+        self.rush_chars += chars
+        self.rush_secs += sec
+        verdict = (tr(f"✔ 친 코드를 새 입력으로 실행 → {ratio * 100:.0f}% 일치", f"✔ your typed code ran on fresh input → {ratio * 100:.0f}% match")
+                   if res["ok"] else tr("✖ 실행 실패: ", "✖ run failed: ") + res["msg"].splitlines()[0][:80])
+        self.body = view() + ["", fx.c(verdict, fx.LIME if ratio == 1 else fx.RED, bold=True),
+                              fx.c(tr("저장됨 ▸ ", "saved ▸ ") + str(src), fx.DIM)]
+        self.render()
+        perfect = typos == 0 and wrong == 0
+        speed = max(0.7, min(1.6, wpm / 35))
+        self.deal(chars * 2.2 * speed * (1.0 if ratio == 1 else 0.5), crit=perfect and ratio == 1,
+                  label="CLONED" if ratio == 1 else "CLEAR", event="perfect" if perfect else None)
+        self.after(p)
+        return {"ok": ratio == 1, "wpm": wpm, "typos": typos, "wrong": wrong}
+
     # ─── 해설 + 디버거 ────────────────────────────────────
 
     def after(self, p, extra=()):
@@ -847,7 +986,7 @@ class Game:
     def replay_code(self, p):
         if p["lang"] != "python":
             return None
-        if p["kind"] == "task":
+        if p["kind"] in ("task", "clone"):
             path = Path(p["_ws"]) / "solution.py" if p.get("_ws") else None
             return path.read_text(encoding="utf-8") if path and path.exists() else None
         if p["kind"] == "quiz":
