@@ -320,7 +320,8 @@ def exam_list_lines():
          fx.c(tr("입력 TXT → 로봇 공식 계산 → 요구 형식 그대로 output.txt. Python/C++ 모범답안은 같은 출력으로 검증됨",
                  "input TXT → robot formulas → output.txt in the exact format. Python/C++ model answers verified to match"), fx.DIM), ""]
     for t in exam.TASKS:
-        L.append(f"  {fx.c(fx.pad(t['tid'], 10), fx.GOLD, bold=True)}{fx.pad(i18n.pick(t['topic']), 18)}{i18n.pick(t['title'])}")
+        L.append(f"  {fx.c(fx.pad(t['tid'], 10), fx.GOLD, bold=True)}{fx.pad(i18n.pick(t['topic']), 22)}"
+                 f"{fx.pad(i18n.pick(t['title']), 34)}{fx.c(i18n.pick(exam.BASIS[t['basis']]), fx.DIM)}")
     L += ["", fx.c(tr("예: codekata exam task -t ik2 -l cpp", "e.g. codekata exam task -t ik2 -l cpp"), fx.DIM)]
     return L
 

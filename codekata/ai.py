@@ -350,7 +350,9 @@ class ProblemSource:
             ids = [t["tid"] for t in exam.TASKS]
             fresh = [t for t in ids if t not in self._bank_used and t not in seen[-6:]] or \
                     [t for t in ids if t not in self._bank_used] or ids
-            tid = random.choice(fresh)
+            # 실전 작업형은 실기 안내 예시·기출 복원 유형(기구학·가감속)을 3배 자주
+            weight = {"official": 3, "recall": 3}
+            tid = random.choices(fresh, [1 if clone else weight.get(exam.TASK_BY_ID[t]["basis"], 1) for t in fresh])[0]
             seen.append(tid)
         self._bank_used.add(tid)
         return (exam.make_clone if clone else exam.make_task)(tid, lang, seed=random.randrange(1 << 30))

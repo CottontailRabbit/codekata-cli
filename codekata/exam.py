@@ -160,11 +160,86 @@ def gen_fan(rng):
     return "\n".join(rows) + "\n"
 
 
-def T(tid, topic, title, desc, fmt, hint, gen):
-    return {"tid": tid, "topic": topic, "title": title, "desc": desc, "fmt": fmt, "hint": hint, "gen": gen}
+def gen_trap(rng):
+    sets = []
+    for _ in range(3):                                   # 2020 복원 문제처럼 데이터 3세트
+        x0 = rng.choice([0, 10, 20])
+        vmax, acc = rng.choice([(20, 5), (20, 4), (10, 2), (10, 5), (15, 5)])
+        ta = vmax / acc
+        tc = rng.randrange(10, 31) / 2                   # 등속 시간 5.0~15.0 s
+        sets.append(f"{x0} {x0 + vmax * (ta + tc):g} {vmax} {acc} 0.1")
+    return "\n".join(sets) + "\n"
+
+
+def gen_pose2(rng):
+    L1, L2 = rng.choice([(1.0, 1.0), (1.0, 0.5), (0.8, 0.6)])
+    rows = [f"{L1} {L2}", f"{rng.choice([0, 0, 30, 45])} {rng.choice([0, 0, 15])}"]
+    for _ in range(rng.randint(3, 4)):
+        rows.append(f"{rng.randrange(-90, 91, 10)} {rng.randrange(-90, 91, 10)}")
+    return "\n".join(rows) + "\n"
+
+
+def gen_fk3(rng):
+    L = rng.choice([(1.0, 0.8, 0.3), (0.5, 0.4, 0.2), (1.2, 1.0, 0.5)])
+    poses = [" ".join(str(rng.randrange(-90, 91, 15)) for _ in range(3)) for _ in range(rng.randint(3, 5))]
+    return " ".join(map(str, L)) + "\n" + "\n".join(poses) + "\n"
+
+
+def gen_ik3(rng):
+    L1, L2, L3 = rng.choice([(1.0, 0.8, 0.3), (0.5, 0.4, 0.2), (1.2, 1.0, 0.5)])
+    rows = []
+    for _ in range(rng.randint(3, 4)):
+        t1, t2, t3 = rng.randrange(-60, 121, 5), rng.randrange(15, 151, 5), rng.randrange(-90, 91, 5)
+        a1, a12, phi = math.radians(t1), math.radians(t1 + t2), t1 + t2 + t3
+        x = L1 * math.cos(a1) + L2 * math.cos(a12) + L3 * math.cos(math.radians(phi))
+        y = L1 * math.sin(a1) + L2 * math.sin(a12) + L3 * math.sin(math.radians(phi))
+        rows.append(f"{_f(x)} {_f(y)} {phi}")
+    far = L1 + L2 + L3 + 0.4
+    rows.insert(rng.randint(0, len(rows)), f"{_f(far)} 0.000 0")
+    return f"{L1} {L2} {L3}\n" + "\n".join(rows) + "\n"
+
+
+def T(tid, topic, title, desc, fmt, hint, gen, basis=None):
+    """basis: 출제 근거 — official(실기 안내 예시) / recall(2020 응시자 복원) / scope(출제기준 범위)"""
+    return {"tid": tid, "topic": topic, "title": title, "desc": desc, "fmt": fmt, "hint": hint, "gen": gen,
+            "basis": basis or "scope"}
 
 
 TASKS = [
+    T("trap", ("궤적 계획 · 가감속", "Trajectory · trapezoid"), ("가감속 운동계획 (데이터 3세트)", "Accel/decel motion plan (3 data sets)"),
+      ("줄마다 한 세트 'x0 xf vmax a dt' (m, m/s, m/s², s). x0에서 정지 출발해 가속도 a로 vmax까지 가속, 등속 후 "
+       "−a로 감속해 xf에서 정지합니다. 세트마다 t = k·dt (0 ~ T 포함)의 위치·속도·가속도를 CSV로 쓰시오. "
+       "구간 판정은 정수 k로: k < ta/dt 가속, k < (T−ta)/dt 등속, 나머지 감속. (출력은 엑셀 그래프용)",
+       "Each line is a set 'x0 xf vmax a dt' (m, m/s, m/s², s). Start at rest at x0, accelerate at a up to vmax, cruise, "
+       "then decelerate at −a to stop at xf. For each set write position, velocity and acceleration at t = k·dt "
+       "(0 … T inclusive) as CSV. Decide the phase with the integer k: k < ta/dt accel, k < (T−ta)/dt cruise, else decel."),
+      ("머리글 'set,t,x,v,a' + 'set,t(1자리),x,v,a(3자리)'", "header 'set,t,x,v,a' + 'set,t (1 dp),x,v,a (3 dp)'"),
+      ("ta = vmax/a, T = (xf−x0)/vmax + ta. 감속 구간은 r = T−t로 x = xf − ½·a·r², v = a·r",
+       "ta = vmax/a, T = (xf−x0)/vmax + ta. Decel phase: r = T−t, x = xf − ½·a·r², v = a·r"), gen_trap, "recall"),
+    T("pose2", ("기구학 · 자세 변화", "Kinematics · pose steps"), ("2링크 각도 변화에 따른 자세", "2-link pose after angle changes"),
+      ("첫 줄 L1 L2, 둘째 줄 처음 관절각 θ1 θ2 [도], 다음 줄부터는 관절각의 '변화량' Δθ1 Δθ2입니다. "
+       "처음 자세(step 0)와 변화를 누적한 단계마다 관절 B와 끝점 C의 좌표를 쓰시오 (A는 원점).",
+       "Line 1 is L1 L2, line 2 the initial joint angles θ1 θ2 [deg], and every following line is a CHANGE Δθ1 Δθ2. "
+       "For the initial pose (step 0) and after each accumulated change, write joint B and end point C (A is the origin)."),
+      ("머리글 'step,theta1,theta2,Bx,By,Cx,Cy' + 각도 1자리, 좌표 3자리", "header 'step,theta1,theta2,Bx,By,Cx,Cy' + angles 1 dp, coordinates 3 dp"),
+      ("변화량은 누적! θ1 += Δθ1, θ2 += Δθ2. 둘째 링크의 절대각은 θ1+θ2",
+       "Changes accumulate! θ1 += Δθ1, θ2 += Δθ2. The second link's absolute angle is θ1+θ2"), gen_pose2, "recall"),
+    T("fk3", ("기구학 · 3축", "Kinematics · 3-axis"), ("3축 평면 로봇 자세 출력", "3-axis planar arm poses"),
+      ("첫 줄 L1 L2 L3, 다음 줄부터 상대 관절각 θ1 θ2 θ3 [도]. 자세마다 관절1·관절2·끝점 좌표와 끝점 방향각 φ를 쓰시오.",
+       "Line 1 is L1 L2 L3; each following line is relative joint angles θ1 θ2 θ3 [deg]. For each pose write joint 1, "
+       "joint 2 and end point coordinates and the end orientation φ."),
+      ("'x1 y1 x2 y2 x3 y3 φ' 좌표 3자리, φ = θ1+θ2+θ3 1자리(정규화 안 함)",
+       "'x1 y1 x2 y2 x3 y3 φ', coordinates 3 dp, φ = θ1+θ2+θ3 with 1 dp (no wrapping)"),
+      ("링크 i의 절대각은 θ1+…+θi. 좌표는 앞 관절 좌표에 누적", "Link i points along θ1+…+θi; accumulate from the previous joint"),
+      gen_fk3, "official"),
+    T("ik3", ("기구학 · 3축 IK", "Kinematics · 3-axis IK"), ("3축 평면 로봇 링크 각도 계산 (IK)", "3-axis planar arm joint angles (IK)"),
+      ("첫 줄 L1 L2 L3, 다음 줄부터 목표 'x y φ' (m, m, 도). 손목점을 구해 θ1 θ2 θ3 [도]를 계산하시오. "
+       "θ2는 acos 해(0~180°), θ1·θ3는 [-180, 180)로 맞춥니다. 닿지 않으면 UNREACHABLE.",
+       "Line 1 is L1 L2 L3; each following line is a target 'x y φ' (m, m, deg). Find the wrist point and solve θ1 θ2 θ3 [deg]. "
+       "Use the acos branch for θ2 (0–180°), wrap θ1 and θ3 into [-180, 180). Print UNREACHABLE if out of reach."),
+      ("목표당 'θ1 θ2 θ3' 소수 3자리 또는 UNREACHABLE", "one line 'θ1 θ2 θ3' with 3 decimals per target, or UNREACHABLE"),
+      ("손목점 wx = x − L3·cosφ, wy = y − L3·sinφ → 2링크 IK → θ3 = φ − θ1 − θ2",
+       "Wrist wx = x − L3·cosφ, wy = y − L3·sinφ → 2-link IK → θ3 = φ − θ1 − θ2"), gen_ik3, "official"),
     T("fk2", ("기구학 · FK", "Kinematics · FK"), ("2링크 순기구학(FK)", "2-link forward kinematics"),
       ("2링크 평면 로봇팔입니다. 첫 줄은 링크 길이 L1 L2 [m], 다음 줄부터 자세마다 관절각 θ1 θ2 [도]입니다. "
        "자세마다 베이스·관절1·말단의 좌표 Px0 Py0 Px1 Py1 Px2 Py2 를 계산해 output.txt에 쓰시오.",
@@ -172,7 +247,7 @@ TASKS = [
        "For every pose write the base, joint-1 and end-effector coordinates Px0 Py0 Px1 Py1 Px2 Py2 to output.txt."),
       ("자세당 한 줄 · 공백 구분 · 소수점 3자리", "one line per pose · space separated · 3 decimals"),
       ("x1 = L1·cosθ1, x2 = x1 + L2·cos(θ1+θ2). cos/sin은 라디안만 받습니다!",
-       "x1 = L1·cosθ1, x2 = x1 + L2·cos(θ1+θ2). cos/sin take radians!"), gen_fk2),
+       "x1 = L1·cosθ1, x2 = x1 + L2·cos(θ1+θ2). cos/sin take radians!"), gen_fk2, "official"),
     T("ik2", ("기구학 · IK", "Kinematics · IK"), ("2링크 역기구학(IK)", "2-link inverse kinematics"),
       ("첫 줄은 L1 L2 [m], 다음 줄부터 목표 말단 위치 x y [m]입니다. 목표마다 관절각 θ1 θ2 [도]를 구하시오. "
        "θ2는 acos 결과(0~180°) 해를 쓰고, θ1은 [-180, 180) 범위로 맞춥니다. 닿지 않는 점은 UNREACHABLE.",
@@ -181,7 +256,7 @@ TASKS = [
       ("목표당 한 줄 'θ1 θ2' 소수점 3자리, 또는 UNREACHABLE", "one line per target 'θ1 θ2' with 3 decimals, or UNREACHABLE"),
       ("D = (x²+y²−L1²−L2²)/(2·L1·L2), θ2 = acos(D), θ1 = atan2(y,x) − atan2(L2·sinθ2, L1+L2·cosθ2). |D|>1이면 도달 불가",
        "D = (x²+y²−L1²−L2²)/(2·L1·L2), θ2 = acos(D), θ1 = atan2(y,x) − atan2(L2·sinθ2, L1+L2·cosθ2). |D|>1 → unreachable"),
-      gen_ik2),
+      gen_ik2, "official"),
     T("mk2", ("기구학 · MK", "Kinematics · MK"), ("2링크 동기구학 (v = J·θ̇)", "2-link velocity kinematics (v = J·θ̇)"),
       ("첫 줄은 L1 L2 [m], 다음 줄부터 θ1 θ2 [도] θ̇1 θ̇2 [도/s]입니다. 자코비안으로 말단 속도 vx vy [m/s]를 구하시오.",
        "Line 1 is L1 L2 [m]; each following line is θ1 θ2 [deg] θ̇1 θ̇2 [deg/s]. Use the Jacobian to compute the "
@@ -287,7 +362,8 @@ def make_task(tid, lang, seed=None):
     inp = t["gen"](rng)
     return {"kind": "task", "track": "exam", "lang": lang, "tid": tid, "id": f"task-{tid}", "source": "bank",
             "title": pick(t["title"]), "topic": pick(t["topic"]), "desc": pick(t["desc"]), "fmt": pick(t["fmt"]),
-            "hint": pick(t["hint"]), "input": inp, "expected": reference_output(tid, inp), "explain": pick(t["hint"])}
+            "hint": pick(t["hint"]), "input": inp, "expected": reference_output(tid, inp), "explain": pick(t["hint"]),
+            "basis": pick(BASIS[t["basis"]])}
 
 
 _TRAIL_COMMENT = re.compile(r"\s{2,}(#|//)\s.*$")
@@ -504,8 +580,23 @@ def QL(lang, title, code, intent, lines, bug, fix, expect, explain):
 
 
 BLANK = ("빈칸 ____ 에 들어갈 코드는?", "Which code fills the blank ____?")
+BASIS = {"official": ("★ 실기 안내 예시 유형", "★ official sample type"), "recall": ("◆ 2020 기출 복원 유형", "◆ 2020 recalled type"),
+         "scope": ("· 출제기준 범위", "· syllabus scope")}
 
 QUIZ = [
+    QB("python", ("누적 관절각", "Accumulated joint angles"),
+       "t1, t2 = 0.0, 0.0\nchanges = [(-90, -90), (10, -30)]   # 단계별 '변화량'\nfor d1, d2 in changes:\n    ____\nprint(t1, t2)",
+       ("단계별 변화량을 반영해 최종 관절각을 구하는 코드는?", "Which code applies each step's change to get the final angles?"),
+       ["t1, t2 = d1, d2", "t1, t2 = t1 + d1, d2", "t1, t2 = t1 + d1, t2 + d2", "t1 += d1; t2 = t1 + d2"], 2, "-80.0 -120.0",
+       ("2020 실기처럼 각도를 '변화량'으로 주면 누적해야 합니다. 관절각(상대각)과 링크 절대각(θ1+θ2)도 구분!",
+        "When angles are given as changes (as in the 2020 exam) they accumulate. Keep joint (relative) and link (absolute) angles apart!")),
+    QB("python", ("가감속 등속 구간 위치", "Cruise-phase position"),
+       "x0, vmax, acc = 20.0, 20.0, 5.0\nta = vmax / acc          # 가속 시간\nt = 10.0                 # 등속 구간의 한 시각\nx = ____\nprint(round(x, 3))",
+       ("등속 구간의 위치 x(t)는?", "What is the position x(t) during the cruise phase?"),
+       ["x0 + vmax * t", "0.5 * acc * ta * ta + vmax * (t - ta)", "x0 + 0.5 * acc * ta * ta + vmax * (t - ta)",
+        "x0 + 0.5 * acc * t * t"], 2, "180.0",
+       ("가속 구간에서 이미 ½·a·ta²만큼 갔고, 그 뒤로 vmax·(t − ta). 시작 위치 x0도 잊지 마세요!",
+        "The accel phase already covered ½·a·ta², then vmax·(t − ta) — and don't forget the start x0!")),
     QB("python", ("IK θ1 — atan2", "IK θ1 — atan2"),
        "import math\n\nL1, L2 = 1.0, 0.5\nx, y = -0.6, 0.9                     # 2사분면 목표점\n"
        "D = (x * x + y * y - L1 * L1 - L2 * L2) / (2 * L1 * L2)\nt2 = math.acos(D)\nt1 = ____\n"

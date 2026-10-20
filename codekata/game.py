@@ -718,6 +718,9 @@ class Game:
         cols, _ = fx.size()
         w = max(40, min(cols - 8, 96))
         lang_ext = "C++ (g++ -std=gnu++17)" if p["lang"] == "cpp" else "Python 3"
+        exp_lines = p["expected"].split("\n")
+        example = exp_lines[0] if any(ch.isdigit() for ch in exp_lines[0]) or len(exp_lines) < 2 else \
+            f"{exp_lines[0]}  ⏎  {exp_lines[1]}"
 
         def result_lines():
             if last is None:
@@ -744,7 +747,7 @@ class Game:
         def body(reveal=None):
             icon, col = kind_icon("task")
             out = [fx.c(icon, col, bold=True) + "  " + fx.c(p["title"], fx.WHITE, bold=True) +
-                   fx.c(f"   [{p['topic']} · {lang_ext}]", fx.DARK), ""]
+                   fx.c(f"   [{p['topic']} · {lang_ext}]", fx.DARK) + "  " + fx.c(p.get("basis", ""), fx.GOLD), ""]
             out += [fx.c(x, 253) for x in wrap(p["desc"], w)]
             inp = p["input"].rstrip("\n").split("\n")
             out += ["", fx.c(tr(f"input.txt ({len(inp)}줄)", f"input.txt ({len(inp)} lines)"), fx.DIM)]
@@ -752,7 +755,7 @@ class Game:
             if len(inp) > 6:
                 out.append(fx.c("   ⋮", fx.DARK))
             out += [fx.c(tr("출력 형식 ▸ ", "Output ▸ "), fx.SKY, bold=True) + fx.c(p["fmt"], fx.SKY),
-                    fx.c(tr("첫 줄 예시 ▸ ", "Line 1 example ▸ "), fx.DIM) + fx.c(p["expected"].split("\n")[0], fx.WHITE)]
+                    fx.c(tr("첫 줄 예시 ▸ ", "Line 1 example ▸ "), fx.DIM) + fx.c(example, fx.WHITE)]
             if hint:
                 out.append(fx.c(tr("힌트 ▸ ", "Hint ▸ "), fx.GOLD, bold=True) + fx.c(p["hint"], fx.GOLD))
             out += [fx.c(tr("작업 파일 ▸ ", "Your file ▸ "), fx.DIM) + fx.c(str(src), fx.CYAN)]

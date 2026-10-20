@@ -125,13 +125,21 @@ codekata exam list
 Task keys: `e` editor · `r` run & grade · `h` hint (−30%) · `f` submit partial (≥ 50%) · `ESC` give up (shows the
 model answer) · 25 minutes per task. Editing in another window (e.g. VS Code) and pressing `r` works too.
 
-12 tasks with fresh random input every time: `fk2`, `ik2`, `mk2` (Jacobian velocity), `cubic`, `lspb`, `bbpb`,
-`dijkstra`, `grid` (8-connected A*), `floyd`, `pid`, `can` (CAN frame parsing), `fan` (temperature hysteresis).
-The Python and C++ model answers of every task produce identical output on 40 random inputs.
+16 tasks with fresh random input every time (`codekata exam list`); the ranked boss task picks ★/◆ types 3× as often.
 
-> Sources (researched 2026-10): Q-net notice "2026 Robot SW Development Engineer practical exam" (applies from the 3rd
-> engineer session of 2026; personal PCs not allowed) and candidates' study notes (task-type, ~4–5 h, exam-room PC with
-> Visual Studio · PyCharm · Excel, C · C++ · Python). Check the official PDF for the exact environment.
+| basis | tasks |
+|---|---|
+| ◆ recalled 2020 exam type | `trap` accel/decel motion plan, 3 data sets (x/v/a CSV for charts) · `pose2` accumulate 2-link joint-angle *changes*, print end points |
+| ★ official sample type | `fk2` · `ik2` · `fk3` 3-axis poses · `ik3` 3-axis joint angles (wrist-point IK) |
+| · syllabus scope | `mk2` Jacobian velocity · `cubic` · `lspb` · `bbpb` · `dijkstra` · `grid` 8-connected A* · `floyd` · `pid` · `can` · `fan` |
+
+The Python and C++ model answers produce identical output on random inputs (`tests/test_exam.py`).
+
+> Sources (researched 2026-10): Q-net "2026 Robot SW Development Engineer practical exam" notice — task-type, **4 hours**
+> (5 h in the 2022 notice), Windows 10 · Visual Studio · PyCharm · Excel, no personal PCs; tasks are kinematics / inverse
+> kinematics programs in C, C++ or Python plus charts of the output; **Excel may only be used for charts, data must come from
+> your program**. Official samples: accel/decel axis motion plan, end-effector coordinates, link angles, 2/3-axis poses.
+> The only candidate recollection found (2020) matches `trap` and `pose2`.
 
 ## Online ranking
 
